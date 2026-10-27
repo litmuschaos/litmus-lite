@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -91,10 +93,10 @@ Commands:
   new -beside DIR        write a co-located *.chaos.yaml
   validate FILE          schema + safety
   run FILE               execute a scenario (-allow-target, -allow-pid, -yes, -stream-file|-push|-pull, -run-id, -label)
-                         shows the run in your browser by default (-no-live, -no-open, -live-url; see "live")
+                         optional live view in your browser once a service is configured (-live-url, see "live")
   diagnose FILE.json     explain a report
   hub list|search|show|import
-  init                   register MCP + Cursor rules
+  init                   register MCP + Cursor rules (-env KEY=VALUE, repeatable, for the MCP server)
   doctor                 check CLI / hosts / target (-file FILE, -stream URL|ADDR)
   compare BASE CAND      phase regression
   mcp serve | mcp eval
@@ -103,7 +105,7 @@ Commands:
   export job FILE        Kubernetes Job YAML (no CRD)
   stream                 from-report | replay | validate | receive (run event streams)
   serve                  read-only data source over a directory of run files (-dir, -listen)
-  live                   your live-view project: print or open its URL (-open), or "live reset"
+  live                   optional live view of a run: "live enable URL" | "live disable" | print or open the page (-open) | "live reset"
 
 `, version)
 }
@@ -385,21 +387,18 @@ func cmdHub(args []string) int {
 func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	editor := fs.String("editor", "cursor", "cursor|claude-code")
-	liveDir := fs.String("live-dir", "", "keep the MCP server's live view project in DIR (set LITMUS_LITE_CONFIG_DIR for it), e.g. to share one project with vegaload's MCP server")
+	var envs pushFlag
+	fs.Var(&envs, "env", "set KEY=VALUE in the MCP server's environment (repeatable; KEY= removes it). For example LITMUS_LITE_LIVE_URL=https://live.example, or LITMUS_LITE_CONFIG_DIR=DIR to keep litmus-lite's config elsewhere")
 	_ = outputFlag(fs)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	var env map[string]string
-	if *liveDir != "" {
-		abs, err := absDir(*liveDir)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		env = map[string]string{"LITMUS_LITE_CONFIG_DIR": abs}
+	env, err := parseInitEnv(envs)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "init:", err)
+		return 2
 	}
-	bin, err := os.Executable()
+	bin, err := executablePath()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -414,6 +413,62 @@ func cmdInit(args []string) int {
 	_ = hosts.WriteProjectMCP(cwd, bin, env)
 	fmt.Println("initialized litmus-lite MCP in", cwd)
 	return 0
+}
+
+// executable is os.Executable; tests replace it.
+var executable = os.Executable
+
+// executablePath is the path of this binary as written into the MCP entry. The
+// system may hand it back as it was typed (/tmp/x/proj/../litmus-lite), so it
+// is cleaned. Links are not resolved: a package manager's stable link must
+// stay what the editor runs.
+func executablePath() (string, error) {
+	bin, err := executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(bin), nil
+}
+
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// secretName matches variable names that hold a credential.
+var secretName = regexp.MustCompile(`(?i)(token|secret|password|passwd|credential|api_?key)`)
+
+// parseInitEnv checks the -env values of `init`. The MCP file is written into
+// the project, where it is usually committed, so a credential must never go
+// there: the name decides (LITMUS_LITE_STREAM_TOKEN and the like), and so does
+// a URL with a user name or password in it. The values of the two path
+// variables are made absolute, because an editor starts the server from a
+// directory of its own choosing. An empty value means "remove".
+func parseInitEnv(pairs []string) (map[string]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	env := map[string]string{}
+	for _, kv := range pairs {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || !envName.MatchString(k) {
+			return nil, fmt.Errorf("-env %q: want KEY=VALUE, with KEY a variable name", kv)
+		}
+		if secretName.MatchString(k) {
+			return nil, fmt.Errorf("-env %s: the MCP file is written into the project and is often committed, so it must not hold a credential. Set %s in the environment of the editor instead", k, k)
+		}
+		if strings.Contains(v, "://") {
+			if u, err := url.Parse(v); err == nil && u.User != nil {
+				return nil, fmt.Errorf("-env %s: the value has credentials in it; the MCP file must not hold them", k)
+			}
+		}
+		if v != "" && (k == "LITMUS_LITE_CONFIG_DIR" || k == "LITMUS_LITE_HOME") {
+			abs, err := absDir(v)
+			if err != nil {
+				return nil, err
+			}
+			v = abs
+		}
+		env[k] = v
+	}
+	return env, nil
 }
 
 // absDir makes a directory argument absolute, expanding a leading ~ the shell

@@ -58,7 +58,7 @@ open report.html   # or xdg-open / start
 ```
 
 ```
-./litmus-lite init -editor cursor   # -live-dir DIR: share one live-view project with vegaload's MCP server
+./litmus-lite init -editor cursor   # -env KEY=VALUE (repeatable) sets variables for the MCP server
 ./litmus-lite hub list
 ./litmus-lite doctor
 ./litmus-lite mcp eval

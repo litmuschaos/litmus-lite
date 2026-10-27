@@ -63,7 +63,7 @@ func allTools() []tool {
 		},
 		{
 			Name: "run_test", CLI: "run",
-			Desc: "litmus-lite run: execute a scenario (steady state, inject, recover) and write a JSON report and an overlay HTML report. The first text item of the result is the report as JSON. By default the run is also shown live in the user's browser (the live view): the page opens by itself and its URL is in a second text item, \"live view: URL\". Tell the user that URL. Pass no-live only if the user does not want the live view, or no-open to stream without opening a browser.",
+			Desc: "litmus-lite run: execute a scenario (steady state, inject, recover) and write a JSON report and an overlay HTML report. The first text item of the result is the report as JSON. If a live-view service is configured (LITMUS_LITE_LIVE_URL in the server's environment, or kept by `litmus-lite live enable`), the run is also shown live in the user's browser: the page opens by itself and its URL is in a second text item, \"live view: URL\". Tell the user that URL. Pass no-live if the user does not want the live view, or no-open to stream without opening a browser. With no service configured nothing is shown or sent.",
 			Props: safetyProps(map[string]any{
 				"file":        strArg("Path to the *.chaos.yaml file."),
 				"out":         strArg("Where to write the JSON report, for example report.json. Pass this path to diagnose_failure or get_results."),
@@ -72,7 +72,7 @@ func allTools() []tool {
 				"stream_pull": strArg("Optional. Forward -stream-pull: address to serve the run as SSE on while it runs, for example 127.0.0.1:7070. The tool call returns after the run and a short linger."),
 				"run_id":      strArg("Optional. Forward -run-id: the id used on stream events (A-Z a-z 0-9 . _ -, up to 64). Give a generator the same id to join their streams."),
 				"labels":      strArg("Optional. Forward -label: comma-separated key=value labels for every stream event, for example \"service=checkout,env=ci\"."),
-				"live":        boolArg("Optional. Forward -live: show the run in the live view even when CI is set or a stream_* destination is given. The live view is already the default when none is given."),
+				"live":        boolArg("Optional. Forward -live: also show the run in the live view when a stream_* destination is given. It fails if no live-view service is configured. When one is configured and no stream_* destination is given, the live view is used without this."),
 				"no-live":     boolArg("Optional. Forward -no-live: do not stream to the live view or open a browser."),
 				"no-open":     boolArg("Optional. Forward -no-open: stream to the live view but do not open the browser."),
 			}),
@@ -188,7 +188,8 @@ func cliArgs(name string, args map[string]any) ([]string, error) {
 	// Streaming arguments are passed to the same flags `run` has. There is no
 	// MCP-only streaming path, and nothing here can relax the CLI's rules.
 	// Without live, no-live or no-open, `run` does what it does from a shell:
-	// the live view is on unless CI is set or a destination is given.
+	// the live view is used only when a service is configured and no other
+	// destination is given.
 	streamFlags := func(argv []string) []string {
 		for _, f := range []string{"live", "no-live", "no-open"} {
 			if flagOn(args, f) {
