@@ -408,6 +408,10 @@ func fakeVegaLoad(t *testing.T, notes string) string {
 		t.Skip("shell script stand-in")
 	}
 	script := `#!/bin/sh
+if [ "$1" = "run" ] && [ "$2" = "-h" ]; then
+  printf 'Usage: vegaload run [flags]\n  -no-open\n  -out string\n  -report string\n  -stream-file string\n'
+  exit 2
+fi
 sf=""; out=""; ALLARGS="$*"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -492,8 +496,9 @@ func TestStreamedRunRelaysTheLoadGeneratorsPoints(t *testing.T) {
 	}
 }
 
-// Without an emitter nothing changes for the generator: no -stream-file, no
-// -no-open, and the run id is not made up.
+// Without an emitter the generator is not asked for a stream file and the run
+// id is not made up. It is still kept quiet: -no-open and a temporary report,
+// as in every run.
 func TestRunWithoutAnEmitterDoesNotStreamTheGenerator(t *testing.T) {
 	srv := okServer(t)
 	scriptedStart = func(scenario.Fault) (faults.Running, error) { return &fakeRun{}, nil }
@@ -508,7 +513,10 @@ func TestRunWithoutAnEmitterDoesNotStreamTheGenerator(t *testing.T) {
 	if !strings.Contains(string(b), "live=off") {
 		t.Fatalf("the generator must never open its own live view under litmus-lite: %s", b)
 	}
-	if strings.Contains(string(b), "-report ") || strings.Contains(string(b), "-no-open") {
-		t.Fatalf("an unstreamed run keeps the generator's own report behaviour: %s", b)
+	if !strings.Contains(string(b), "-report ") || !strings.Contains(string(b), "-no-open") {
+		t.Fatalf("an unstreamed run must keep the generator's own report out of the browser and the working directory: %s", b)
+	}
+	if strings.Contains(string(b), "-stream-file") {
+		t.Fatalf("a stream file was requested without a stream: %s", b)
 	}
 }
