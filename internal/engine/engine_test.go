@@ -306,7 +306,11 @@ func TestFailpointArmsDuringInject(t *testing.T) {
 apiVersion: litmus-lite.io/v1
 kind: Scenario
 metadata: { name: cashier-charge }
-baseline: 400ms
+# The probe interval is 80ms, so a baseline of 360ms ends 40ms from the
+# nearest probe. A multiple of 80ms would put a probe on the boundary where
+# the hook is armed, and CI showed that probe seeing the fault (503) while it
+# still belongs to the steady phase.
+baseline: 360ms
 recover: 800ms
 steadyState:
   - name: healthz
