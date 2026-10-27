@@ -338,6 +338,9 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 			if len(out.Raw) > 0 {
 				res.Load = out.Raw
 			}
+			if out.Generator != nil {
+				res.LoadGenerator = out.Generator
+			}
 			if len(out.Series) > 0 {
 				loadSeries = out.Series
 			}

@@ -408,6 +408,10 @@ func fakeVegaLoad(t *testing.T, notes string) string {
 		t.Skip("shell script stand-in")
 	}
 	script := `#!/bin/sh
+if [ "$1" = "version" ]; then
+  echo "vegaload 1.2.3"
+  exit 0
+fi
 if [ "$1" = "run" ] && [ "$2" = "-h" ]; then
   printf 'Usage: vegaload run [flags]\n  -no-open\n  -out string\n  -report string\n  -stream-file string\n'
   exit 2
@@ -493,6 +497,10 @@ func TestStreamedRunRelaysTheLoadGeneratorsPoints(t *testing.T) {
 	}
 	if len(res.Load) == 0 {
 		t.Fatal("the generator's own result is still kept")
+	}
+	// The run records which generator ran: tool, version, and the file.
+	if g := res.LoadGenerator; g == nil || g.Tool != "vegaload" || g.Version != "1.2.3" || g.Path == "" || g.Via != "explicit path" {
+		t.Fatalf("loadGenerator in the result: %+v", g)
 	}
 }
 

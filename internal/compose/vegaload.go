@@ -31,7 +31,8 @@ func runVegaLoad(ctx context.Context, binOverride, baseDir string, load *scenari
 	// What this vegaload can do is read from its help before it runs, so every
 	// run takes one path (see vegaLoadArgs).
 	caps := probeCaps(ctx, path, env)
-	args, streamFile, note := vegaLoadArgs(caps, dir, outFile, opts.Progress != nil)
+	who := fmt.Sprintf("%s (%s)", Status{Tool: "vegaload", Version: probeVersion(ctx, path, env)}.Name(), tilde(path))
+	args, streamFile, note := vegaLoadArgs(caps, who, dir, outFile, opts.Progress != nil)
 	var stopTail func()
 	if streamFile != "" {
 		// Read the per-second points as vegaload writes them.

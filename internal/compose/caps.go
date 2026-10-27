@@ -39,6 +39,12 @@ func parseFlags(help string) genCaps {
 	return genCaps{known: len(flags) > 0, flags: flags}
 }
 
+// probeTimeout bounds how long the help of a generator is waited for. It is
+// generous on purpose: the first start of a freshly installed binary can take
+// seconds on macOS while the system checks it, and a probe that gives up too
+// soon makes a capable generator look incapable.
+const probeTimeout = 10 * time.Second
+
 type capsKey struct {
 	path string
 	size int64
@@ -59,7 +65,7 @@ func probeCaps(ctx context.Context, path string, env []string) genCaps {
 			return v.(genCaps)
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "run", "-h")
 	cmd.Env = env
@@ -78,15 +84,15 @@ func probeCaps(ctx context.Context, path string, env []string) genCaps {
 // browser: the page the user sees is litmus-lite's. A streamed run also asks
 // for the per-second points in a file, when this vegaload can write one.
 // streamFile is empty when no file is asked for; note says, once, what the
-// user does not get.
-func vegaLoadArgs(caps genCaps, dir, outFile string, streamed bool) (args []string, streamFile, note string) {
+// user does not get. who names the copy ("vegaload 0.9.0 (~/bin/vegaload)").
+func vegaLoadArgs(caps genCaps, who, dir, outFile string, streamed bool) (args []string, streamFile, note string) {
 	args = []string{"run", "-output", "json", "-out", outFile}
 	// Unknown capabilities (the help could not be read): -no-open and -report
 	// exist in every vegaload that litmus-lite supports, so assume them.
 	if !caps.known || caps.has("no-open") {
 		args = append(args, "-no-open")
 	} else {
-		note = "this vegaload has no -no-open; it may open its own report in the browser"
+		note = who + " has no -no-open; it may open its own report in the browser"
 	}
 	if !caps.known || caps.has("report") {
 		args = append(args, "-report", filepath.Join(dir, "report.html"))
@@ -95,8 +101,11 @@ func vegaLoadArgs(caps genCaps, dir, outFile string, streamed bool) (args []stri
 		if caps.has("stream-file") {
 			streamFile = filepath.Join(dir, "stream.ndjson")
 			args = append(args, "-stream-file", streamFile)
+		} else if !caps.known {
+			// Not the same as "has no -stream-file": its flags were never read.
+			note = joinNotes(note, who+" did not list its flags (`run -h` gave nothing in time), so live load points are not available, the load series arrives when it finishes")
 		} else if note == "" {
-			note = "this vegaload has no -stream-file; live load points are not available, the load series arrives when it finishes"
+			note = who + " has no -stream-file; live load points are not available, the load series arrives when it finishes"
 		} else {
 			note += "; live load points are not available either"
 		}

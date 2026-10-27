@@ -3,6 +3,7 @@ package compose
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -21,22 +22,21 @@ type fakeGenerator struct {
 	browser string // exists when the generator "opened a browser"
 }
 
-func installFakeVegaLoad(t *testing.T, stream bool) fakeGenerator {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the fake generator is a shell script")
-	}
-	dir := t.TempDir()
-	f := fakeGenerator{log: filepath.Join(dir, "calls.log"), browser: filepath.Join(dir, "browser")}
-	script := `#!/bin/sh
-echo "$*" >> "$FAKE_LOG"
+// fakeScript is the vegaload stand-in; __VERSION__ and __STREAM__ (1 or 0) are
+// filled in per copy, so that two copies on one machine can differ.
+const fakeScript = `#!/bin/sh
+[ -n "$FAKE_LOG" ] && echo "$*" >> "$FAKE_LOG"
+if [ "$1" = "version" ]; then
+  echo "vegaload __VERSION__"
+  exit 0
+fi
 if [ "$1" = "run" ] && [ "$2" = "-h" ]; then
   echo "Usage: vegaload run [flags] [scenario-file]"
   echo "  -no-open"
   printf '    \tdo not open the report\n'
   echo "  -out string"
   echo "  -report string"
-  [ "$FAKE_STREAM" = "1" ] && echo "  -stream-file string"
+  [ "__STREAM__" = "1" ] && echo "  -stream-file string"
   exit 2
 fi
 out=""; report=""; stream=""; noopen=0
@@ -54,17 +54,41 @@ done
 [ -n "$stream" ] && printf '%s\n' '{"schema":"vegaload.io/stream/v1","runId":"r","seq":1,"type":"point","data":{"offsetS":1,"rps":7,"requests":7,"failed":0,"errorRate":0}}' >> "$stream"
 printf '%s' '{"time_series":[{"offset_ns":0,"rps":10,"error_rate":0},{"offset_ns":1000000000,"rps":12,"error_rate":0.5}]}' > "$out"
 `
-	if err := os.WriteFile(filepath.Join(dir, "vegaload"), []byte(script), 0o755); err != nil {
+
+// writeFakeVegaLoad writes a stand-in named vegaload into dir. It lists
+// -stream-file in `run -h` only when stream is true and says version for
+// `vegaload version`.
+func writeFakeVegaLoad(t *testing.T, dir, version string, stream bool) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake generator is a shell script")
+	}
+	flag := "0"
+	if stream {
+		flag = "1"
+	}
+	body := strings.NewReplacer("__VERSION__", version, "__STREAM__", flag).Replace(fakeScript)
+	path := filepath.Join(dir, "vegaload")
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Start it once now. The first start of a new executable can be slow on
+	// macOS (the system checks it), and a test must not measure that.
+	_ = exec.Command(path, "version").Run()
+	return path
+}
+
+// installFakeVegaLoad puts a fake vegaload (version 1.2.3) first on PATH and
+// moves the test into a scratch working directory, where a stray report would
+// show.
+func installFakeVegaLoad(t *testing.T, stream bool) fakeGenerator {
+	t.Helper()
+	dir := t.TempDir()
+	f := fakeGenerator{log: filepath.Join(dir, "calls.log"), browser: filepath.Join(dir, "browser")}
+	writeFakeVegaLoad(t, dir, "1.2.3", stream)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FAKE_LOG", f.log)
 	t.Setenv("FAKE_BROWSER", f.browser)
-	if stream {
-		t.Setenv("FAKE_STREAM", "1")
-	} else {
-		t.Setenv("FAKE_STREAM", "0")
-	}
 	// The generator writes into its working directory: make that a scratch one.
 	old, _ := os.Getwd()
 	work := t.TempDir()
@@ -252,12 +276,12 @@ func TestVegaLoadArgs(t *testing.T) {
 		{"new, streamed", full, true, []string{"-no-open", "-report", "-stream-file"}, nil, true, ""},
 		{"new, plain", full, false, []string{"-no-open", "-report"}, []string{"-stream-file"}, false, ""},
 		{"old, streamed", oldOne, true, []string{"-no-open", "-report"}, []string{"-stream-file"}, false, "no -stream-file"},
-		{"unknown help, streamed", unknown, true, []string{"-no-open", "-report"}, []string{"-stream-file"}, false, "no -stream-file"},
+		{"unknown help, streamed", unknown, true, []string{"-no-open", "-report"}, []string{"-stream-file"}, false, "did not list its flags"},
 		{"ancient, plain", ancient, false, nil, []string{"-no-open", "-report", "-stream-file"}, false, "no -no-open"},
 		{"ancient, streamed", ancient, true, nil, []string{"-no-open", "-report", "-stream-file"}, false, "live load points are not available"},
 	}
 	for _, c := range cases {
-		args, sf, note := vegaLoadArgs(c.caps, dir, out, c.streamed)
+		args, sf, note := vegaLoadArgs(c.caps, "vegaload 1.2.3 (~/bin/vegaload)", dir, out, c.streamed)
 		for _, f := range c.flags {
 			if !has(args, f) {
 				t.Errorf("%s: missing %s in %v", c.name, f, args)

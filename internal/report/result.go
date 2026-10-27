@@ -25,9 +25,21 @@ type Result struct {
 	Passed             bool                `json:"passed"`
 	Warnings           []string            `json:"warnings,omitempty"`
 	Load               json.RawMessage     `json:"load,omitempty"`
+	LoadGenerator      *LoadGenerator      `json:"loadGenerator,omitempty"`
 	Prometheus         []Point             `json:"prometheus,omitempty"`
 	ObservedVsInjected []KV                `json:"observedVsInjected"`
 	Recovery           time.Duration       `json:"recovery_ns"`
+}
+
+// LoadGenerator records which load-generator binary ran in a composed run:
+// with several copies of a tool on one machine, a reader can tell which one
+// produced the load series. Path is the local file and stays in report.json;
+// the event stream leaves it out (stream.BuildFinished).
+type LoadGenerator struct {
+	Tool    string `json:"tool"`
+	Version string `json:"version,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Via     string `json:"via,omitempty"`
 }
 
 type KV struct {

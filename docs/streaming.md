@@ -255,7 +255,7 @@ Every event is a JSON object:
 | `load.point` | `offsetS` (run clock, like `point.offsetS`), `rps`, `errorRate`, optional `p50Ms`, `p95Ms`, `p99Ms`, `requests`, `failed` | Generator progress, about once a second, when the tool can report it. Today only vegaload does |
 | `load.finished` | `series[]` (`offsetS`, `rps`, `errorRate`, on the run clock; can be empty), `error` only on failure | Generator exited |
 | `warning` | `message` | Anything that goes to `res.Warnings`, including dropped events |
-| `run.finished` | The `report.json` content plus `diagnosis` (the `diagnose` text). Raw `probes` only with `-stream-samples`. Credentials in `faultLog` tunables are redacted. | Last event of a run that completed |
+| `run.finished` | The `report.json` content plus `diagnosis` (the `diagnose` text). Raw `probes` only with `-stream-samples`. Credentials in `faultLog` tunables are redacted. A composed run adds an optional `loadGenerator` (`tool`, `version`, `via`): which generator binary ran. Its local `path` is in `report.json` only, never in the stream. | Last event of a run that completed |
 | `run.failed` | `reason` (for example a failed steady-state probe, or `interrupted`), partial result if any | Last event of a run that did not complete |
 
 Every stream ends with exactly one of `run.finished` or `run.failed`, including on Ctrl-C.
@@ -281,7 +281,7 @@ litmus-lite run checkout.chaos.yaml -run-id demo-42 -stream-pull 127.0.0.1:7070
 vegaload run checkout.vl.js -run-id demo-42 ...      # when the generator supports it
 ```
 
-When litmus-lite streams a composed run with vegaload, it starts vegaload with `-stream-file` and `-no-open`, reads the per-second points as vegaload writes them and re-emits them as `load.point` in its own stream, so the whole run is one stream with one `runId`. It also sets `VEGALOAD_LIVE=off` for the generator in every composed run, streamed or not: litmus-lite owns the view, and the generator must not open its own page or push a second run. A vegaload without `-stream-file` still runs; its points arrive in `load.finished` at the end, with a warning. The `k6` and `command` tools emit `load.started` and `load.finished` only.
+When litmus-lite streams a composed run with vegaload, it starts vegaload with `-stream-file` and `-no-open`, reads the per-second points as vegaload writes them and re-emits them as `load.point` in its own stream, so the whole run is one stream with one `runId`. It also sets `VEGALOAD_LIVE=off` for the generator in every composed run, streamed or not: litmus-lite owns the view, and the generator must not open its own page or push a second run. Whether vegaload can write a stream file is read from its `run -h` before it starts, so every run takes one path: `-no-open` and a temporary `-report` are always passed, `-stream-file` only when listed. A vegaload without `-stream-file` still runs; its points arrive in `load.finished` at the end, with one warning that names the copy. The `k6` and `command` tools emit `load.started` and `load.finished` only.
 
 Litmus-lite also exports `LITMUS_LITE_RUN_ID` to a generator it starts (and `VEGALOAD_RUN_ID` to vegaload). A consumer joins on `runId` when present, otherwise on a shared label plus overlapping `ts` ranges. Any generator can contribute by emitting `load.point` and `load.finished` events in this format.
 
