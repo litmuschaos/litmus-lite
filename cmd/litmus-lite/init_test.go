@@ -41,6 +41,7 @@ func TestInitLiveDirIsWrittenAbsoluteIntoTheMCPEntry(t *testing.T) {
 func TestAbsDirExpandsTilde(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this one on Windows
 	got, err := absDir("~/rt-live")
 	if err != nil || got != filepath.Join(home, "rt-live") {
 		t.Fatalf("absDir = %q, %v", got, err)
