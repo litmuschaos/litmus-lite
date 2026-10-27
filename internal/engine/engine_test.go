@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -282,12 +283,20 @@ func TestFailpointArmsDuringInject(t *testing.T) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 	})
+	// What the server answered, and when, so that a failure in the steady
+	// phase can be told from a probe that never reached the server.
+	var seenMu sync.Mutex
+	var seen []string
+	started := time.Now()
 	mux.HandleFunc("/charge", func(w http.ResponseWriter, r *http.Request) {
+		code := 200
 		if err := failpoint.Fail("charge"); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
+			code = http.StatusServiceUnavailable
 		}
-		w.WriteHeader(200)
+		seenMu.Lock()
+		seen = append(seen, fmt.Sprintf("%dms:%d", time.Since(started).Milliseconds(), code))
+		seenMu.Unlock()
+		w.WriteHeader(code)
 	})
 	mux.Handle("/_litmus/failpoint", failpoint.Handler())
 	srv := httptest.NewServer(mux)
@@ -354,7 +363,9 @@ hypotheses:
 		}
 	}
 	if steady.Samples == 0 || steady.ErrorRate > 0 {
-		t.Fatalf("steady %+v", steady)
+		seenMu.Lock()
+		defer seenMu.Unlock()
+		t.Fatalf("steady %+v\nthe server saw /charge at: %v", steady, seen)
 	}
 	if inject.ErrorRate < 0.5 {
 		t.Fatalf("inject %+v", inject)

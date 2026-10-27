@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -221,6 +222,7 @@ func TestCLIArgsForwardLiveViewFlags(t *testing.T) {
 // line was merged into stdout and run_test stopped returning valid JSON.
 func TestToolStdoutStaysJSONAndNotesGoSeparately(t *testing.T) {
 	dir := t.TempDir()
+	needShell(t)
 	script := filepath.Join(dir, "fake-cli")
 	body := "#!/bin/sh\necho 'live view: http://127.0.0.1:7080/p/p-abc' 1>&2\necho '{\"passed\":true}'\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
@@ -251,6 +253,7 @@ func TestToolStdoutStaysJSONAndNotesGoSeparately(t *testing.T) {
 
 func TestToolWithoutNotesHasOneContentItem(t *testing.T) {
 	dir := t.TempDir()
+	needShell(t)
 	script := filepath.Join(dir, "fake-cli")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho '{\"ok\":true}'\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -265,6 +268,7 @@ func TestToolWithoutNotesHasOneContentItem(t *testing.T) {
 
 func TestFailedToolReportsBothStreams(t *testing.T) {
 	dir := t.TempDir()
+	needShell(t)
 	script := filepath.Join(dir, "fake-cli")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 'out' \necho 'bad scenario' 1>&2\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -281,6 +285,7 @@ func TestFailedToolReportsBothStreams(t *testing.T) {
 // together.
 func TestNotPassedRunIsAResultNotAnError(t *testing.T) {
 	dir := t.TempDir()
+	needShell(t)
 	script := filepath.Join(dir, "fake-cli")
 	body := "#!/bin/sh\necho '{\"passed\":false}'\necho 'live view: http://127.0.0.1:7080/p/p-abc' 1>&2\nexit 3\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
@@ -298,5 +303,13 @@ func TestNotPassedRunIsAResultNotAnError(t *testing.T) {
 	if len(items) != 2 || json.Unmarshal([]byte(items[0]["text"]), &v) != nil || v["passed"] != false ||
 		!strings.HasPrefix(items[1]["text"], "live view:") {
 		t.Fatalf("content %v", items)
+	}
+}
+
+// needShell skips a test whose fake CLI is a shell script.
+func needShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake CLI is a shell script")
 	}
 }
