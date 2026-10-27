@@ -518,14 +518,14 @@ func cmdMCP(args []string) int {
 
 func cmdMoveTo(args []string) int {
 	fs := flag.NewFlagSet("move-to", flag.ContinueOnError)
-	adapter := fs.String("adapter", "ir", "ir|litmus|harness")
+	adapter := fs.String("adapter", "ir", "ir|litmus")
 	out := outputFlag(fs)
 	outPath := fs.String("out", "", "optional file to write (stdout always)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "move-to [-adapter ir|litmus|harness] [-output text|json] [-out FILE] FILE")
+		fmt.Fprintln(os.Stderr, "move-to [-adapter ir|litmus] [-output text|json] [-out FILE] FILE")
 		return 2
 	}
 	sc, err := scenario.Load(fs.Arg(0))
@@ -545,14 +545,8 @@ func cmdMoveTo(args []string) int {
 		} else {
 			body = litmusadapter.YAML(doc)
 		}
-	case "harness":
-		fmt.Print(string(moveto.JSON(ex)))
-		if err := moveto.Push("harness", ex); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-		}
-		return 1
 	default:
-		printErr(*out, fmt.Errorf("unknown adapter %q", *adapter))
+		printErr(*out, fmt.Errorf("unknown adapter %q (want ir or litmus)", *adapter))
 		return 1
 	}
 	fmt.Print(string(body))
