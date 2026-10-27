@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -163,6 +164,11 @@ func toolDefs() []map[string]any {
 	return out
 }
 
+// cliArgs maps a tool call to the argv of the CLI command it wraps. Values the
+// caller chooses and that go in a positional place (a file, an id) come after
+// "--", so one that starts with "-" is a file name and never a flag: a tool
+// call cannot add a flag that the tool does not declare (for example
+// -stream-insecure, which docs/streaming.md says no tool call can set).
 func cliArgs(name string, args map[string]any) ([]string, error) {
 	str := func(k, def string) string {
 		if args == nil {
@@ -222,7 +228,7 @@ func cliArgs(name string, args map[string]any) ([]string, error) {
 		return []string{"new", "-beside", str("beside", "."), "-name", str("name", "scenario"), "-output", "json"}, nil
 	case "validate_scenario":
 		argv := safetyFlags([]string{"validate", "-output", "json"})
-		return append(argv, str("file", "")), nil
+		return append(argv, "--", str("file", "")), nil
 	case "run_test":
 		argv := []string{"run", "-output", "json"}
 		if o := str("out", ""); o != "" {
@@ -230,9 +236,9 @@ func cliArgs(name string, args map[string]any) ([]string, error) {
 		}
 		argv = safetyFlags(argv)
 		argv = streamFlags(argv)
-		return append(argv, str("file", "")), nil
+		return append(argv, "--", str("file", "")), nil
 	case "diagnose_failure":
-		return []string{"diagnose", "-output", "json", str("file", "")}, nil
+		return []string{"diagnose", "-output", "json", "--", str("file", "")}, nil
 	case "list_faults":
 		return []string{"hub", "list", "-output", "json"}, nil
 	case "hub_import":
@@ -240,9 +246,9 @@ func cliArgs(name string, args map[string]any) ([]string, error) {
 		if n := str("name", ""); n != "" {
 			argv = append(argv, "-name", n)
 		}
-		return append(argv, str("id", "")), nil
+		return append(argv, "--", str("id", "")), nil
 	case "compare_reports":
-		return []string{"compare", "-output", "json", str("baseline", ""), str("candidate", "")}, nil
+		return []string{"compare", "-output", "json", "--", str("baseline", ""), str("candidate", "")}, nil
 	case "doctor":
 		argv := []string{"doctor", "-output", "json"}
 		if f := str("file", ""); f != "" {
@@ -305,8 +311,8 @@ func runTool(name string, args map[string]any) (toolResult, error) {
 		return def
 	}
 	if t.ReadFile {
-		b, err := os.ReadFile(str("file", "report.json"))
-		return toolResult{Text: string(b)}, err
+		text, err := readReport(str("file", "report.json"))
+		return toolResult{Text: text}, err
 	}
 	argv, err := cliArgs(name, args)
 	if err != nil {
@@ -338,3 +344,35 @@ func runTool(name string, args map[string]any) (toolResult, error) {
 // exitNotPassed is the CLI exit code of a run or comparison that finished and
 // did not pass (a failed hypothesis, a regression).
 const exitNotPassed = 3
+
+// maxReportBytes bounds what get_results reads. A report of a long run with
+// every probe sample is a few MB; nothing legitimate comes near this.
+const maxReportBytes = 64 << 20
+
+// readReport returns the text of a report file that `run` wrote, and nothing
+// else. get_results is the one tool with no CLI command behind it, so it must
+// not be a way to read any file the server can: a path that is not a litmus-lite
+// report (a key, a config file, any other JSON) is refused, and the refusal
+// does not quote what the file held.
+func readReport(path string) (string, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !st.Mode().IsRegular() || st.Size() > maxReportBytes {
+		return "", fmt.Errorf("%s is not a litmus-lite report", path)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var probe struct {
+		Name   *string         `json:"name"`
+		Passed *bool           `json:"passed"`
+		Phases json.RawMessage `json:"phases"`
+	}
+	if json.Unmarshal(b, &probe) != nil || probe.Name == nil || probe.Passed == nil || len(probe.Phases) == 0 {
+		return "", fmt.Errorf("%s is not a litmus-lite report", path)
+	}
+	return string(b), nil
+}

@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -428,6 +429,10 @@ func writeImport(it Item, beside, name string) (string, error) {
 	if name == "" {
 		name = strings.ReplaceAll(it.ID, ".", "-")
 	}
+	// name is a file stem: it must not walk out of the directory.
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		return "", fmt.Errorf("import name %q must be a file name, not a path", name)
+	}
 	if !strings.HasSuffix(name, ".chaos.yaml") {
 		name += ".chaos.yaml"
 	}
@@ -435,7 +440,22 @@ func writeImport(it Item, beside, name string) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(beside, name)
-	if err := os.WriteFile(path, []byte(it.Template), 0o644); err != nil {
+	// O_EXCL: an import never replaces a scenario that is already there (it may
+	// hold hand-made changes), nor follows a link planted at that name.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("%s already exists; pass another -name or remove it", path)
+		}
+		return "", err
+	}
+	if _, err := f.WriteString(it.Template); err != nil {
+		f.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
 		return "", err
 	}
 	return path, nil

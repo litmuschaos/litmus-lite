@@ -336,6 +336,14 @@ func TestLiveEnableTurnsItOnForLaterRunsAndDisableTurnsItOff(t *testing.T) {
 	if code := run([]string{"litmus-lite", "live", "enable", "ftp://nope"}); code != 2 {
 		t.Fatalf("a bad address: exit %d", code)
 	}
+	// http:// to a remote host is refused at enable time, not kept and then
+	// refused on every run.
+	if code := run([]string{"litmus-lite", "live", "enable", "http://live.example.com"}); code != 2 {
+		t.Fatalf("a remote http address: exit %d", code)
+	}
+	if u, _ := live.Destination(""); u != nil {
+		t.Fatalf("a refused address was kept: %v", u)
+	}
 }
 
 func TestNoOpenStreamsWithoutABrowser(t *testing.T) {

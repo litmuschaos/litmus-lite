@@ -238,20 +238,24 @@ func cmdRun(args []string) int {
 		return 2
 	}
 	auditLine := audit.Line{Command: "run", File: file}
+	// Ctrl-C and SIGTERM always stop the run the same way: the engine rolls
+	// every fault back (resumes a paused process, unpauses a container, removes
+	// a fill file) and no report is written. Without this the default action of
+	// the signal ends the process at once and leaves the fault in place, which
+	// for a chaos tool is the worst way to stop. A second signal, while the
+	// rollback is running, is not caught, so it ends the process.
+	var stop context.CancelFunc
+	ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() { <-ctx.Done(); stop() }()
 	if st != nil {
 		auditLine.Stream = st.audit
-		// Only when streaming: stop on Ctrl-C or SIGTERM, roll faults back and
-		// end the stream with run.failed. Without a stream flag, signals are
-		// handled as before.
-		var stop context.CancelFunc
-		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-		defer stop()
 		eopt.Emitter = st.rec
 		eopt.RunID = st.rec.RunID()
 		defer func() { st.close(ctx) }()
 	}
 	res, err := engine.Run(ctx, sc, eopt)
-	if st != nil && ctx.Err() != nil {
+	if ctx.Err() != nil {
 		fmt.Fprintln(os.Stderr, "interrupted: faults rolled back, no report written")
 		audit.Append(auditLine)
 		return 130

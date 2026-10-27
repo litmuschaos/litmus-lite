@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -311,5 +312,75 @@ func needShell(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake CLI is a shell script")
+	}
+}
+
+// A value in a positional place never becomes a flag. Without "--", a file
+// named "-stream-insecure" would be read by the CLI as that flag, and a tool
+// call would reach flags its schema does not declare.
+func TestPositionalValuesComeAfterDoubleDash(t *testing.T) {
+	cases := map[string]map[string]any{
+		"run_test":          {"file": "-stream-insecure"},
+		"validate_scenario": {"file": "-stream-insecure"},
+		"diagnose_failure":  {"file": "-stream-insecure"},
+		"hub_import":        {"id": "-stream-insecure"},
+		"compare_reports":   {"baseline": "-stream-insecure", "candidate": "-live"},
+	}
+	for name, args := range cases {
+		argv, err := cliArgs(name, args)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		dd := -1
+		for i, a := range argv {
+			if a == "--" {
+				dd = i
+				break
+			}
+		}
+		if dd < 0 {
+			t.Errorf("%s: no -- in %v", name, argv)
+			continue
+		}
+		for _, a := range argv[:dd] {
+			if strings.HasPrefix(a, "-stream-insecure") || a == "-live" {
+				t.Errorf("%s: the caller's value %q is before --: %v", name, a, argv)
+			}
+		}
+	}
+}
+
+// get_results is the one tool without a CLI command behind it, so it must not
+// be a way to read other files.
+func TestGetResultsReturnsReportsOnly(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	good := write("report.json", `{"name":"x","passed":true,"phases":[],"probes":[]}`)
+	out, err := callTool("get_results", map[string]any{"file": good})
+	if err != nil || !strings.Contains(out, `"passed":true`) {
+		t.Fatalf("a report: %q %v", out, err)
+	}
+
+	for name, body := range map[string]string{
+		"key.pem":      "-----BEGIN PRIVATE KEY-----\nSECRET-KEY-MATERIAL\n",
+		"package.json": `{"name":"app","version":"1.0.0","secret":"SECRET-KEY-MATERIAL"}`,
+		"cred.json":    `{"name":"x","passed":"SECRET-KEY-MATERIAL"}`,
+	} {
+		out, err := callTool("get_results", map[string]any{"file": write(name, body)})
+		if err == nil {
+			t.Errorf("%s was returned: %q", name, out)
+		}
+		if strings.Contains(out+fmt.Sprint(err), "SECRET-KEY-MATERIAL") {
+			t.Errorf("%s: the refusal quotes the file", name)
+		}
+	}
+	if _, err := callTool("get_results", map[string]any{"file": dir}); err == nil {
+		t.Error("a directory was read")
 	}
 }

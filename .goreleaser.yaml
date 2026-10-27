@@ -1,10 +1,9 @@
 version: 2
 project_name: litmus-lite
 
-before:
-  hooks:
-    - go mod tidy
-    - go test ./...
+# Tests and `go mod tidy` run in the release workflow before this job starts
+# (see .github/workflows/release.yml), so a hook here cannot fail a release
+# half-way, and a tidy cannot dirty the tree goreleaser checks.
 
 builds:
   - id: litmus-lite
@@ -39,7 +38,7 @@ homebrew_casks:
     binaries: [litmus-lite]
     directory: Casks
     homepage: https://github.com/ksatchit/litmus-lite
-    description: Chaos testing for agentic developers — declarative *.chaos.yaml, no control plane
+    description: Chaos testing for agentic developers, from declarative YAML scenarios
     license: Apache-2.0
     commit_author:
       name: litmus-lite-release
@@ -50,9 +49,11 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     # Binaries are not signed/notarized; clear Gatekeeper quarantine on install.
+    # install_steps renders as postflight_steps (the plain postflight block is
+    # deprecated in Homebrew).
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/litmus-lite"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/litmus-lite"]
           end

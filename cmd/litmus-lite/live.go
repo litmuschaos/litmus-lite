@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/ksatchit/litmus-lite/internal/live"
+	"github.com/ksatchit/litmus-lite/internal/stream"
 )
 
 // cmdLive manages the optional live view of `run`. It is dormant until a
@@ -92,6 +93,14 @@ func cmdLive(args []string) int {
 }
 
 func liveEnable(raw string) int {
+	// Keep nothing that a run would refuse: a remote http:// address would be
+	// saved here and then rejected, with the project's token, on every run.
+	if u, err := live.Destination(raw); err == nil && u != nil {
+		if _, err := stream.ValidatePushURL(u.String()+"/v1/projects/p/ingest", false); err != nil {
+			fmt.Fprintln(os.Stderr, "live:", err)
+			return 2
+		}
+	}
 	id, base, err := live.Enable(raw)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "live:", err)

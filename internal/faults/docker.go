@@ -25,6 +25,13 @@ func (dockerPause) Validate(f scenario.Fault) error {
 	if scenario.StringParam(f.Params, "name") == "" && scenario.StringParam(f.Params, "id") == "" {
 		return fmt.Errorf("docker.pause needs params.name or params.id")
 	}
+	// The name or id is an argument of the docker CLI: one that starts with '-'
+	// would be read as an option (docker pause --help, or worse).
+	for _, k := range []string{"name", "id"} {
+		if v := scenario.StringParam(f.Params, k); strings.HasPrefix(strings.TrimSpace(v), "-") {
+			return fmt.Errorf("docker.pause: params.%s %q must not start with '-'", k, v)
+		}
+	}
 	if _, err := exec.LookPath("docker"); err != nil {
 		return fmt.Errorf("docker.pause: docker CLI not found on PATH")
 	}
