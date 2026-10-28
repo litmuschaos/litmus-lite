@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,10 +125,10 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	for _, p := range sc.SteadyState {
 		runProbe(p)
 		mu.Lock()
-		ok := len(samples) > 0 && samples[len(samples)-1].OK
+		last := samples[len(samples)-1]
 		mu.Unlock()
-		if !ok {
-			return res, fmt.Errorf("steady-state probe %q failed", p.Name)
+		if !last.OK {
+			return res, startFailure(p, last)
 		}
 	}
 
@@ -138,10 +141,10 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 		}
 		runProbe(p)
 		mu.Lock()
-		ok := len(samples) > 0 && samples[len(samples)-1].OK
+		last := samples[len(samples)-1]
 		mu.Unlock()
-		if !ok {
-			return res, fmt.Errorf("steady-state probe %q failed", p.Name)
+		if !last.OK {
+			return res, startFailure(p, last)
 		}
 	}
 
@@ -466,6 +469,16 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	close(chaosOff)
 	em.Phase("recover")
 	for i, r := range running {
+		// A fault that sits in the path of requests and saw none changed
+		// nothing: say so, because every hypothesis was then judged on a
+		// service that was not disturbed.
+		if c, ok := r.(faults.TrafficCounter); ok && c.Requests() == 0 {
+			msg := noTrafficWarning(events[i])
+			mu.Lock()
+			res.Warnings = append(res.Warnings, msg)
+			mu.Unlock()
+			em.Warning(msg)
+		}
 		if a, ok := r.(faults.Armable); ok {
 			a.Disarm()
 			events[i].End = injectEnd
@@ -549,4 +562,73 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 		}
 	}
 	return res, nil
+}
+
+// clientErrPrefix is how net/http starts an error: `Get "URL": `. The URL is
+// shown without its credentials and query by startFailure, so the one in the
+// error text is dropped.
+var clientErrPrefix = regexp.MustCompile(`^[A-Za-z]+ "[^"]*": `)
+
+// maxFailureText is how much of a probe's error the failure message carries.
+const maxFailureText = 240
+
+// startFailure is the error of a probe that failed before anything was
+// injected. It says where the probe looked and why it failed, because that is
+// the first failure a new user meets: a service that is not running, or a
+// probe that points at the wrong address. A command probe's command is not
+// repeated (it can hold a secret); its own output is the reason.
+func startFailure(p scenario.Probe, s probe.Sample) error {
+	msg := fmt.Sprintf("steady-state probe %q failed", p.Name)
+	switch strings.ToLower(p.Type) {
+	case "cmd", "command":
+	default:
+		method := p.Method
+		if method == "" {
+			method = "GET"
+		}
+		msg += fmt.Sprintf(" (%s %s)", method, bareURL(p.URL))
+	}
+	if reason := firstLine(clientErrPrefix.ReplaceAllString(s.Error, "")); reason != "" {
+		msg += ": " + reason
+	}
+	if strings.Contains(s.Error, "connection refused") {
+		msg += ". Is the service running, and is the address right?"
+	}
+	return errors.New(msg)
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	if r := []rune(s); len(r) > maxFailureText {
+		s = string(r[:maxFailureText]) + "..."
+	}
+	return s
+}
+
+// bareURL is u without credentials or query, which can hold a token. The
+// message ends up on stderr, in a stream event and in a CI log.
+func bareURL(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Host == "" {
+		return "(unreadable URL)"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+// noTrafficWarning is the warning for a proxy fault that no request went
+// through while it was armed.
+func noTrafficWarning(e report.FaultEvent) string {
+	listen, _ := e.Tunables["listen"].(string)
+	where := "its listen address"
+	if listen != "" {
+		where = listen
+	}
+	return fmt.Sprintf("fault %q (%s) saw no requests while it was armed: nothing went through %s, so it changed nothing and the hypotheses were judged on an undisturbed service. "+
+		"Point the probes, the load generator or your client at that address, not at the upstream", e.Name, e.Kind, where)
 }

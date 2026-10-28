@@ -188,6 +188,7 @@ func startHTTPProxy(_ context.Context, f scenario.Fault) (Running, error) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if run.armed.Load() {
+			run.requests.Add(1)
 			if stall > 0 {
 				timer := time.NewTimer(stall)
 				select {
@@ -236,6 +237,7 @@ func startHTTPProxy(_ context.Context, f scenario.Fault) (Running, error) {
 
 type proxyRun struct {
 	armed     atomic.Bool
+	requests  atomic.Int64
 	delay     time.Duration
 	jitter    time.Duration
 	stall     time.Duration
@@ -251,8 +253,9 @@ func (p *proxyRun) Intensity() float64 {
 	}
 	return p.intensity
 }
-func (p *proxyRun) Arm()    { p.armed.Store(true) }
-func (p *proxyRun) Disarm() { p.armed.Store(false) }
+func (p *proxyRun) Requests() int64 { return p.requests.Load() }
+func (p *proxyRun) Arm()            { p.armed.Store(true) }
+func (p *proxyRun) Disarm()         { p.armed.Store(false) }
 func (p *proxyRun) Stop() error {
 	if p.stop != nil {
 		return p.stop()

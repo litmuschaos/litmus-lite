@@ -135,6 +135,8 @@ Read this before you rely on a green run.
 - **Command probes need `sh`.** They do not run on Windows. HTTP probes, proxies and failpoints do.
 - **`docker.pause` has no allowlist.** It pauses whatever container name the scenario gives.
 - **An interrupt you cannot catch is not rolled back.** `SIGKILL` of litmus-lite (or a power cut) during `process.pause` leaves that process stopped (resume it with `kill -CONT PID`), and leaves a `failpoint` armed until the service restarts.
+- **HTTP faults only touch traffic sent to them.** `http.latency`, `http.status-inject` and `http.timeout` are a proxy in the litmus-lite process: only requests to `listen` are affected, and a probe that calls the service directly sees nothing. `validate` and `run` warn when that happens. The proxy speaks HTTP/1.1 on plain TCP; gRPC and cleartext HTTP/2 are not supported.
+- **A report keeps what a probe URL says.** A failed sample's error text can include the probe's URL, with any query string. Do not put a secret in a probe URL query.
 - **Hypotheses are about one window.** They judge the inject window over all probes together; there is no per-probe or per-route breakdown yet.
 
 ## Use it from an agent
@@ -147,6 +149,7 @@ Read this before you rely on a green run.
 
 ## More
 
+- [Architecture](docs/architecture.md) and [internals](docs/internals.md): the parts, one run, the trust boundaries, and how to add a fault.
 - [How a run is judged](docs/hypotheses.md): probes, modes, units, hypotheses, strict checking, report format.
 - [Cookbooks](docs/cookbooks/): [with an agent](docs/cookbooks/with-an-agent.md), [a two-process app](docs/cookbooks/launchpad.md), [load and chaos](docs/cookbooks/load-and-chaos.md), [failpoints](docs/cookbooks/failpoints.md), and the [fault catalog](docs/cookbooks/fault-catalog.md).
 - [Streaming a run](docs/streaming.md): events, live view, `serve`, replay.

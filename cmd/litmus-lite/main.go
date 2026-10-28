@@ -209,6 +209,10 @@ const strictUsage = "treat warnings (a key or param the scenario format does not
 func lintScenario(sc *scenario.Scenario) []string {
 	out := append([]string(nil), sc.Warnings...)
 	out = append(out, faults.Lint(sc)...)
+	if len(sc.Hypotheses) == 0 {
+		out = append(out, "no hypotheses: this run cannot fail, whatever the probes see, so a green result says nothing. "+
+			"Add at least one, for example error_rate or recovery (see docs/hypotheses.md)")
+	}
 	for _, p := range append(append([]scenario.Probe(nil), sc.SteadyState...), sc.Probes...) {
 		out = append(out, probe.Lint(p)...)
 	}

@@ -54,6 +54,33 @@ jobs:
           ./litmus-lite move-to -adapter ir examples/cashier/charge.chaos.yaml
           ./litmus-lite hub list
 
+  # The README's quick start, as written: a green run (exit 0) and a red run
+  # (exit 3) against the sample service. If either answer changes, so does the
+  # first thing a new user sees.
+  quickstart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go build -o litmus-lite ./cmd/litmus-lite
+      - run: go build -o cashier ./examples/cashier
+      - name: green and red
+        run: |
+          LITMUS_LITE_FAILPOINT=charge,charge-slow LITMUS_LITE_FAILPOINT_TOKEN=cashier-demo ./cashier &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do curl -fs localhost:8080/charge >/dev/null && break; sleep 0.2; done
+          export LITMUS_LITE_LIVE=off
+          ./litmus-lite validate -strict examples/cashier/charge.chaos.yaml
+          ./litmus-lite run -out green.json examples/cashier/charge.chaos.yaml
+          set +e
+          ./litmus-lite run -out red.json examples/cashier/charge-must-survive.chaos.yaml
+          code=$?
+          set -e
+          if [ "$code" != "3" ]; then echo "the red run exited $code, want 3"; exit 1; fi
+          ./litmus-lite diagnose red.json
+
   test-macos:
     runs-on: macos-latest
     steps:

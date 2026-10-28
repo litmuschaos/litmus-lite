@@ -94,7 +94,7 @@ func Lint(sc *scenario.Scenario) []string {
 			out = append(out, msg)
 		}
 	}
-	return out
+	return append(out, lintTraffic(sc)...)
 }
 
 // closest returns the entry of known nearest to key when it is near enough to

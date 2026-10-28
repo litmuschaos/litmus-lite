@@ -278,6 +278,15 @@ probes:
     url: http://127.0.0.1:8080/healthz
     interval: 300ms
     expect: { status: 200 }
+hypotheses:
+  - name: stays-healthy
+    metric: error_rate
+    operator: "<"
+    value: 5%
+  - name: recovers
+    metric: recovery
+    operator: <=
+    value: 5s
 rollback: always
 `,
 	},
@@ -305,6 +314,15 @@ probes:
     url: http://127.0.0.1:8080/healthz
     interval: 300ms
     expect: { status: 200 }
+hypotheses:
+  - name: stays-healthy
+    metric: error_rate
+    operator: "<"
+    value: 5%
+  - name: recovers
+    metric: recovery
+    operator: <=
+    value: 5s
 rollback: always
 `,
 	},
@@ -334,6 +352,15 @@ probes:
     url: http://127.0.0.1:8080/healthz
     interval: 300ms
     expect: { status: 200 }
+hypotheses:
+  - name: stays-healthy
+    metric: error_rate
+    operator: "<"
+    value: 5%
+  - name: recovers
+    metric: recovery
+    operator: <=
+    value: 5s
 rollback: always
 `,
 	},
