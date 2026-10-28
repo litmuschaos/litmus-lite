@@ -21,7 +21,6 @@ import (
 	"github.com/ksatchit/litmus-lite/internal/faults"
 	"github.com/ksatchit/litmus-lite/internal/hosts"
 	"github.com/ksatchit/litmus-lite/internal/hub"
-	"github.com/ksatchit/litmus-lite/internal/k8s"
 	"github.com/ksatchit/litmus-lite/internal/mcp"
 	"github.com/ksatchit/litmus-lite/internal/moveto"
 	litmusadapter "github.com/ksatchit/litmus-lite/internal/moveto/litmus"
@@ -102,8 +101,8 @@ Commands:
   compare BASE CAND      phase regression
   mcp serve | mcp eval
   move-to                emit IR or Litmus 4.0 experiment YAML (-adapter ir|litmus)
-  ci github              write a GitHub Actions workflow
-  export job FILE        Kubernetes Job YAML (no CRD)
+  ci github              write a GitHub Actions workflow that installs a release and validates *.chaos.yaml (-version TAG, -force)
+  export job FILE        ConfigMap + Kubernetes Job for a scenario (-image IMAGE is required; -allow-target, -yes). Experimental
   stream                 from-report | replay | validate | receive (run event streams)
   serve                  read-only data source over a directory of run files (-dir, -listen)
   live                   optional live view of a run: "live enable URL" | "live disable" | print or open the page (-open) | "live reset"
@@ -182,16 +181,21 @@ func cmdValidate(args []string) int {
 		printErr(*out, err)
 		return 1
 	}
+	cmds := commandsToRun(sc)
 	if *out == "json" {
 		doc := map[string]any{"valid": true, "name": sc.Metadata.Name}
 		if len(warns) > 0 {
 			doc["warnings"] = warns
+		}
+		if len(cmds) > 0 {
+			doc["runsCommands"] = cmds
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(doc)
 	} else {
 		for _, w := range warns {
 			fmt.Fprintln(os.Stderr, "warning: "+w)
 		}
+		printCommandNotice(os.Stderr, cmds)
 		fmt.Println("valid")
 	}
 	return 0
@@ -278,6 +282,7 @@ func cmdRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "warning: "+w)
 		shown[w] = true
 	}
+	printCommandNotice(os.Stderr, commandsToRun(sc))
 	ctx := safety.WithAllowPIDs(context.Background(), opt.AllowPIDs)
 	eopt := engine.Options{ScenarioDir: filepath.Dir(file), Warnings: startWarns}
 	st, err := sflags.setup()
@@ -669,49 +674,6 @@ func cmdMoveTo(args []string) int {
 			return 1
 		}
 	}
-	return 0
-}
-
-func cmdCI(args []string) int {
-	if len(args) < 1 || args[0] != "github" {
-		fmt.Fprintln(os.Stderr, "ci github")
-		return 2
-	}
-	dir := filepath.Join(".github", "workflows")
-	_ = os.MkdirAll(dir, 0o755)
-	body := `name: litmus-lite
-on: [push, pull_request]
-jobs:
-  chaos:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - run: go build -o litmus-lite ./cmd/litmus-lite
-      - run: ./litmus-lite validate examples/launchpad/ignite.chaos.yaml
-`
-	path := filepath.Join(dir, "litmus-lite.yml")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(path)
-	return 0
-}
-
-func cmdExport(args []string) int {
-	if len(args) < 2 || args[0] != "job" {
-		fmt.Fprintln(os.Stderr, "export job FILE")
-		return 2
-	}
-	sc, err := scenario.Load(args[1])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Print(k8s.JobYAML(sc))
 	return 0
 }
 

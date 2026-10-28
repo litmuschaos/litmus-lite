@@ -46,6 +46,7 @@ If a proposed change breaks any of these, stop and flag it.
 - Pass/fail predicates on a chaos run are **hypotheses**, not “thresholds” and not “resilience score.”
 - Community-facing copy never requires a vendor name for `move-to`.
 - Commit messages: one line, present tense, why not a command log.
+- A scenario that can run a command (a `cmd` probe, `load.tool: command`) must be announced: any new way to run one goes into `commandsToRun` (`cmd/litmus-lite/notice.go`) so `validate` and `run` list it before it runs. MCP's `yes`, `allow-target` and `allow-pid` are refused unless a person set `LITMUS_LITE_MCP_ALLOW`; a new safety flag goes into `safetyFlagNames`.
 - Do not add telemetry. Nothing leaves the machine unprompted: every destination (a stream flag or variable, or a live-view service) is configured by the user, the push token and project id must never reach a report, event or the audit log, and tests must never touch a real config directory or a real live-view service (`cmd/litmus-lite/main_test.go` turns the live view off and isolates it; any new package that calls `run` needs the same).
 
 ## Commands an agent should know

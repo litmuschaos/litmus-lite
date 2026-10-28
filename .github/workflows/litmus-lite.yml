@@ -50,9 +50,8 @@ jobs:
           ./litmus-lite version
           ./litmus-lite validate examples/cashier/charge.chaos.yaml
           ./litmus-lite validate examples/cashier/charge-slow.chaos.yaml
-          ./litmus-lite validate examples/launchpad/ignite.chaos.yaml
           ./litmus-lite mcp eval
-          ./litmus-lite move-to -adapter ir examples/launchpad/ignite.chaos.yaml
+          ./litmus-lite move-to -adapter ir examples/cashier/charge.chaos.yaml
           ./litmus-lite hub list
 
   test-macos:
@@ -76,7 +75,6 @@ jobs:
       - run: go test ./...
       - run: go build -o litmus-lite.exe ./cmd/litmus-lite
       - run: ./litmus-lite.exe validate examples/cashier/charge.chaos.yaml
-      - run: ./litmus-lite.exe validate examples/launchpad/ignite.chaos.yaml
 
   # A snapshot release builds all six targets (linux, darwin, windows, each
   # amd64 and arm64), the archives, the checksums and the Homebrew cask,

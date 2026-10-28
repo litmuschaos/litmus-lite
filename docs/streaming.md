@@ -15,7 +15,7 @@ Litmus-lite is a data source. It does not know about, or depend on, any particul
 | Keep a machine-readable record of a run (CI artifact, replay, tests) | `-stream-file` |
 | Let an application connect to litmus-lite and watch | `-stream-pull` (during a run) or `litmus-lite serve` (any time) |
 | Have litmus-lite send events to an application that exposes an ingest endpoint | `-stream-push` |
-| Show an old run, or demo without running chaos | `litmus-lite stream from-report` and `litmus-lite stream replay` |
+| Show an old run, or work without running chaos | `litmus-lite stream from-report` and `litmus-lite stream replay` |
 | Watch a run in your browser | A live-view service, configured once: `litmus-lite live enable URL` (see "Live view") |
 
 You can combine them. All sinks of a run receive the same events with the same sequence numbers.
@@ -188,7 +188,7 @@ With no service configured, `live`, `live -open` and `live reset` say so and exi
 
 ### What the service must do
 
-For anyone implementing the other side (rt-bridge is one implementation):
+For anyone implementing the other side:
 
 - `GET /v1/health` answers `200 {"status":"ok","projects":true}`.
 - `POST /v1/projects/{id}/ingest` takes the NDJSON batches described in "What an ingest endpoint must do", with `Authorization: Bearer <push token>`. An id that is new, with a token of at least 16 characters, creates the project and pins that token. An existing project needs the same token (`401` otherwise, also for a missing token, so a response does not say whether a project exists). Ids must be 16 to 64 characters of `a-z 0-9 -`.
@@ -278,7 +278,7 @@ Every stream ends with exactly one of `run.finished` or `run.failed`, including 
 The two usual shapes:
 
 - **Composed.** The scenario has a `load:` block and litmus-lite starts the generator. One stream carries the chaos events and, when the tool allows, `load.*` events.
-- **Independent.** The load generator and litmus-lite are started separately, for example by two terminals in a demo. Each produces its own stream.
+- **Independent.** The load generator and litmus-lite are started separately, for example from two terminals. Each produces its own stream.
 
 To let an application join independent streams, give both the same identifier:
 

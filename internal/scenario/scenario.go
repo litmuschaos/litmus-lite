@@ -271,6 +271,11 @@ func (s *Scenario) Validate() error {
 			default:
 				return fmt.Errorf("%s probe %q: unknown type %q (want http or cmd)", group.name, p.Name, p.Type)
 			}
+			if t := strings.ToLower(p.Type); t == "" || t == "http" {
+				if _, err := BodyExpect(p.Expect); err != nil {
+					return fmt.Errorf("%s probe %q: %w", group.name, p.Name, err)
+				}
+			}
 			switch p.Mode {
 			case "", ModeContinuous, ModeOnChaos, ModeSOT, ModeEOT:
 			default:

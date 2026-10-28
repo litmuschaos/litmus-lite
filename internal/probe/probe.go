@@ -47,6 +47,10 @@ func runHTTP(ctx context.Context, p scenario.Probe) (status int, ok bool, errStr
 	if method == "" {
 		method = http.MethodGet
 	}
+	checks, err := scenario.BodyExpect(p.Expect)
+	if err != nil {
+		return 0, false, err.Error()
+	}
 	req, err := http.NewRequestWithContext(ctx, method, p.URL, nil)
 	if err != nil {
 		return 0, false, err.Error()
@@ -55,7 +59,14 @@ func runHTTP(ctx context.Context, p scenario.Probe) (status int, ok bool, errStr
 	if err != nil {
 		return 0, false, err.Error()
 	}
-	io.Copy(io.Discard, resp.Body)
+	// The body is read only for an assertion about it, and only up to
+	// MaxBodyBytes; otherwise it is drained and dropped, as before.
+	var body []byte
+	if checks.Any() {
+		body, err = io.ReadAll(io.LimitReader(resp.Body, scenario.MaxBodyBytes))
+	} else {
+		_, err = io.Copy(io.Discard, resp.Body)
+	}
 	resp.Body.Close()
 	want := 200
 	if p.Expect != nil {
@@ -67,6 +78,14 @@ func runHTTP(ctx context.Context, p scenario.Probe) (status int, ok bool, errStr
 	}
 	if resp.StatusCode != want {
 		return resp.StatusCode, false, resp.Status
+	}
+	if checks.Any() {
+		if err != nil {
+			return resp.StatusCode, false, "reading the body: " + err.Error()
+		}
+		if reason, ok := checks.Check(body); !ok {
+			return resp.StatusCode, false, reason
+		}
 	}
 	return resp.StatusCode, true, ""
 }

@@ -1,11 +1,7 @@
 # docs
 
-Public cookbooks live in [`cookbooks/`](cookbooks/).
-
-Product-requirement drafts, agent handoff notes, and similar internals are kept on the author’s machine only and are not part of this repository.
-
-How probes, hypotheses and recovery are judged, and what `-strict` checks: [`hypotheses.md`](hypotheses.md).
-
-Streaming a run to an application (design): [`streaming.md`](streaming.md).
-
-What is intentionally not scheduled yet: [`ROADMAP.md`](ROADMAP.md).
+- [How a run is judged](hypotheses.md): probes, modes, hypotheses and their units, recovery, strict checking, the report format.
+- [Cookbooks](cookbooks/): walkthroughs. Start with [http-latency](cookbooks/http-latency.md); the others are a two-process app in a terminal, working with an agent, load plus chaos, failpoints, and a [fault catalog](cookbooks/fault-catalog.md).
+- [Streaming a run](streaming.md): the event format, push, pull, `serve`, replay, and the optional live view with what leaves your machine.
+- [Roadmap](ROADMAP.md): what is deliberately not scheduled yet.
+- Project: [README](../README.md) · [SECURITY](../SECURITY.md) · [CONTRIBUTING](../CONTRIBUTING.md) · [GOVERNANCE](../GOVERNANCE.md) · [AGENTS](../AGENTS.md)

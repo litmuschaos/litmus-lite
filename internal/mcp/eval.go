@@ -31,15 +31,15 @@ func evalSuite(work string) []Case {
 		work = os.TempDir()
 	}
 	root, _ := moduleRoot()
-	ignite := filepath.Join(root, "examples", "launchpad", "ignite.chaos.yaml")
+	charge := filepath.Join(root, "examples", "cashier", "charge.chaos.yaml")
 	return []Case{
 		{Name: EvalSuiteVersion + "/initialize", Method: "initialize", Want: "litmus-lite"},
 		{Name: EvalSuiteVersion + "/tools-list", Method: "tools/list", Want: "run_test"},
 		{
 			Name:   EvalSuiteVersion + "/validate_scenario",
 			Method: "tools/call",
-			Params: toolCall{Name: "validate_scenario", Args: map[string]any{"file": ignite}},
-			Want:   "launchpad-http-latency",
+			Params: toolCall{Name: "validate_scenario", Args: map[string]any{"file": charge}},
+			Want:   "cashier-charge",
 		},
 		{
 			Name:   EvalSuiteVersion + "/list_faults",
@@ -60,21 +60,21 @@ func evalSuite(work string) []Case {
 		{
 			Name:      EvalSuiteVersion + "/refuses-agent-yes",
 			Method:    "tools/call",
-			Params:    toolCall{Name: "run_test", Args: map[string]any{"file": ignite, "yes": true}},
+			Params:    toolCall{Name: "run_test", Args: map[string]any{"file": charge, "yes": true}},
 			Want:      allowEnv,
 			WantError: true,
 		},
 		{
 			Name:      EvalSuiteVersion + "/refuses-agent-allow-pid",
 			Method:    "tools/call",
-			Params:    toolCall{Name: "validate_scenario", Args: map[string]any{"file": ignite, "allow-pid": "1"}},
+			Params:    toolCall{Name: "validate_scenario", Args: map[string]any{"file": charge, "allow-pid": "1"}},
 			Want:      allowEnv,
 			WantError: true,
 		},
 		{
 			Name:      EvalSuiteVersion + "/refuses-agent-allow-target",
 			Method:    "tools/call",
-			Params:    toolCall{Name: "run_test", Args: map[string]any{"file": ignite, "allow-target": "example.com"}},
+			Params:    toolCall{Name: "run_test", Args: map[string]any{"file": charge, "allow-target": "example.com"}},
 			Want:      allowEnv,
 			WantError: true,
 		},

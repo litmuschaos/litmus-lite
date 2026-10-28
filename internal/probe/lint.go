@@ -17,7 +17,7 @@ func Lint(p scenario.Probe) []string {
 	case "cmd", "command":
 		read = []string{"contains"}
 	default:
-		read = []string{"status"}
+		read = []string{"status", "body"}
 	}
 	var out []string
 	for k := range p.Expect {

@@ -239,7 +239,7 @@ faults:
     kind: docker.pause
     duration: 8s
     params:
-      name: launchpad-engine
+      name: my-container
 probes:
   - name: healthz
     type: http

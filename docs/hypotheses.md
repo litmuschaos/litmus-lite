@@ -17,6 +17,32 @@ A run is a scenario file, a set of probes sampling the service, and hypotheses a
 
 An unknown mode is an error.
 
+## What a probe checks
+
+An **HTTP probe** (`type: http`, the default) sends one request per sample and is healthy when the status is the expected one (`expect.status`, default 200) and every body assertion holds:
+
+```yaml
+probes:
+  - name: charge
+    type: http
+    url: http://127.0.0.1:8091/charge
+    expect:
+      status: 200
+      body:
+        contains: paid                 # a string, or a list: every entry must be present
+        notContains: ["error", "maintenance"]
+        matches: '"id":\s*[0-9]+'      # a Go (RE2) regular expression, or a list
+```
+
+A gateway that answers `200` with an error page, or a cache that serves stale data, passes on status alone; the body assertions are for those. Notes:
+
+- Only the first 1 MiB of a response is read and judged, and only when there is a body assertion.
+- The status is judged first. When an assertion fails, the sample records which one (`body does not contain "paid"`) and never quotes the body, because a response can carry a token or personal data and the sample ends up in the report.
+- An assertion that cannot work is an error when the file is loaded, never a skipped check: a value that is not a string or a list of non-empty strings, a regular expression that does not compile, or a key other than `contains`, `notContains` and `matches`.
+- Probes follow redirects.
+
+A **command probe** (`type: cmd`) runs `sh -c command` and is healthy on exit status 0 and, if `expect.contains` is set, when the output contains that text. It needs `sh`, so it does not run on Windows. `validate` and `run` list every command a scenario runs before they run it, and `validate -output json` returns them as `runsCommands`; see [SECURITY.md](../SECURITY.md).
+
 ## Hypotheses
 
 ```yaml
