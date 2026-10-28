@@ -23,6 +23,10 @@ type Options struct {
 	Emitter Emitter
 	// RunID, when set, is exported to a load generator as LITMUS_LITE_RUN_ID.
 	RunID string
+	// Warnings are problems found before the run started (a key nothing
+	// reads). They are put at the head of the result's warnings, and sent to
+	// the Emitter, so that the report and the stream's run.finished agree.
+	Warnings []string
 }
 
 // runState lets Run see which faults were armed when the run ends early.
@@ -65,8 +69,12 @@ func Run(ctx context.Context, sc *scenario.Scenario, opt Options) (*report.Resul
 }
 
 func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st *runState) (*report.Result, error) {
-	res := &report.Result{Name: sc.Metadata.Name, StartedAt: time.Now(), Passed: true}
+	res := &report.Result{SchemaVersion: report.SchemaVersion, Name: sc.Metadata.Name, StartedAt: time.Now(), Passed: true}
 	em.Started(sc, res.StartedAt)
+	for _, w := range opt.Warnings {
+		res.Warnings = append(res.Warnings, w)
+		em.Warning(w)
+	}
 	baseline, err := time.ParseDuration(sc.Baseline)
 	if err != nil {
 		return res, fmt.Errorf("baseline: %w", err)
@@ -112,6 +120,22 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	}
 
 	for _, p := range sc.SteadyState {
+		runProbe(p)
+		mu.Lock()
+		ok := len(samples) > 0 && samples[len(samples)-1].OK
+		mu.Unlock()
+		if !ok {
+			return res, fmt.Errorf("steady-state probe %q failed", p.Name)
+		}
+	}
+
+	// SOT probes in probes: take one sample before anything is injected, as
+	// steadyState probes do. A failing one means the system was not healthy to
+	// begin with, so the run stops here and no fault is started.
+	for _, p := range sc.Probes {
+		if p.Mode != scenario.ModeSOT {
+			continue
+		}
 		runProbe(p)
 		mu.Lock()
 		ok := len(samples) > 0 && samples[len(samples)-1].OK
@@ -227,6 +251,11 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 		})
 	}
 
+	// chaosOn is closed once every fault is armed and chaosOff when the inject
+	// window ends. on-chaos probes sample between the two.
+	chaosOn := make(chan struct{})
+	chaosOff := make(chan struct{})
+
 	startProbes := func() error {
 		type job struct {
 			p        scenario.Probe
@@ -234,7 +263,7 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 		}
 		var jobs []job
 		for _, p := range sc.Probes {
-			if p.Mode != "continuous" && p.Mode != "on-chaos" && p.Mode != "" {
+			if p.Mode != scenario.ModeContinuous && p.Mode != scenario.ModeOnChaos && p.Mode != "" {
 				continue
 			}
 			var interval time.Duration
@@ -262,6 +291,22 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				// off stays nil, which never fires, for a probe that runs
+				// all the time.
+				var off <-chan struct{}
+				if j.p.Mode == scenario.ModeOnChaos {
+					select {
+					case <-ctx.Done():
+						return
+					case <-stopProbes:
+						return
+					case <-chaosOn:
+					}
+					off = chaosOff
+					// The window can be shorter than the interval: sample at
+					// once so that it is never empty.
+					runProbe(j.p)
+				}
 				t := time.NewTicker(j.interval)
 				defer t.Stop()
 				for {
@@ -270,7 +315,17 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 						return
 					case <-stopProbes:
 						return
+					case <-off:
+						return
 					case <-t.C:
+						// A tick and the end of the window can be ready
+						// together, and select then picks either: never
+						// sample after the window has closed.
+						select {
+						case <-off:
+							return
+						default:
+						}
 						runProbe(j.p)
 					}
 				}
@@ -390,6 +445,8 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 		}
 	}
 
+	close(chaosOn)
+
 	if !loadAtBaseline {
 		startLoad()
 	}
@@ -406,6 +463,7 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	}
 
 	injectEnd := time.Now()
+	close(chaosOff)
 	em.Phase("recover")
 	for i, r := range running {
 		if a, ok := r.(faults.Armable); ok {
@@ -434,8 +492,8 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	haltProbes()
 	loadWG.Wait()
 
-	for _, p := range append(sc.SteadyState, sc.Probes...) {
-		if p.Mode == "EOT" {
+	for _, p := range append(append([]scenario.Probe(nil), sc.SteadyState...), sc.Probes...) {
+		if p.Mode == scenario.ModeEOT {
 			runProbe(p)
 		}
 	}
@@ -450,7 +508,8 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	phInject := report.Summarize("inject", injectStart, injectEnd, res.Probes)
 	phRec := report.Summarize("recover", injectEnd, recoverEnd, res.Probes)
 	res.Phases = []report.Phase{phSteady, phInject, phRec}
-	res.Recovery = report.RecoveryTime(res.Probes, injectEnd)
+	rec := report.Recovery(res.Probes, injectEnd)
+	res.Recovery = rec.Time
 	res.TimeSeries = report.BucketSeries(res.StartedAt, res.Probes, events, recoverEnd)
 	// The buckets that were not closed when the ticker stopped. They are
 	// emitted before the load series is merged, so every live point is
@@ -473,7 +532,7 @@ func run(ctx context.Context, sc *scenario.Scenario, opt Options, em Emitter, st
 	res.ObservedVsInjected = report.ObservedVsInjected(events, phInject)
 
 	for _, h := range sc.Hypotheses {
-		v := report.HypothesisEval(h, phInject, res.Recovery)
+		v := report.HypothesisEval(h, phInject, rec)
 		res.Hypotheses = append(res.Hypotheses, v)
 		if !v.Passed {
 			res.Passed = false

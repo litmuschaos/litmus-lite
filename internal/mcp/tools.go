@@ -33,12 +33,61 @@ func boolArg(desc string) map[string]any {
 	return map[string]any{"type": "boolean", "description": desc}
 }
 
+// allowEnv is the environment variable a person sets in the MCP server's env
+// (the "env" of its entry in mcp.json) to let tool calls forward safety flags.
+// Its value is a comma-separated list of the flags: yes, allow-target,
+// allow-pid. Without it a tool call that carries one of them is refused.
+//
+// The flags are the person's consent to a destructive or out-of-scope action.
+// If the agent could supply them, "refused unless -yes" would mean "refused
+// unless the agent says yes", and a scenario file the agent wrote itself could
+// kill a process the person never named. Setting this is the person saying,
+// once and in a place the agent does not write, that their agent may.
+const allowEnv = "LITMUS_LITE_MCP_ALLOW"
+
+// safetyFlagNames are the flags allowEnv can enable.
+var safetyFlagNames = []string{"yes", "allow-target", "allow-pid"}
+
+// allowedFlags returns the safety flags the person enabled for this server.
+func allowedFlags() map[string]bool {
+	on := map[string]bool{}
+	for _, f := range strings.Split(os.Getenv(allowEnv), ",") {
+		on[strings.ToLower(strings.TrimSpace(f))] = true
+	}
+	return on
+}
+
+// checkSafetyArgs refuses a tool call that carries a safety flag nobody
+// enabled. The refusal names the flag and how a person enables it, and it
+// changes nothing: no CLI is run.
+func checkSafetyArgs(args map[string]any) error {
+	on := allowedFlags()
+	for _, f := range safetyFlagNames {
+		supplied := false
+		if f == "yes" {
+			supplied = flagOn(args, f)
+		} else if v, ok := args[f]; ok && v != nil && fmt.Sprint(v) != "" {
+			supplied = true
+		}
+		if supplied && !on[f] {
+			return fmt.Errorf("the %q argument is refused: it confirms a destructive or out-of-scope action, and a tool call cannot confirm that for the person. "+
+				"If you are the person and accept that your agent may, add %s=%s to the env of this MCP server (litmus-lite init -env %s=%s) and restart it; "+
+				"or run the same command yourself with -%s",
+				f, allowEnv, f, allowEnv, f, f)
+		}
+	}
+	return nil
+}
+
 // safetyProps are the flags validate_scenario and run_test forward to the CLI.
+// They are forwarded only when a person enabled them (allowEnv).
 func safetyProps(extra map[string]any) map[string]any {
+	const gate = " Refused unless the person who set up this MCP server enabled it with " + allowEnv + "; if it is refused, tell them, or give them the CLI command to run themselves."
 	p := map[string]any{
-		"yes":          boolArg("Forward -yes: confirm a destructive fault (process.kill, disk.fill). Not needed for latency, status, timeout or pause faults."),
-		"allow-target": strArg("Forward -allow-target: comma-separated extra non-loopback hosts the scenario may touch."),
-		"allow-pid":    strArg("Forward -allow-pid: the one PID process.pause or process.kill may signal, for example \"4242\". Required for those faults; no other PID is signalled."),
+		"yes":          boolArg("Forward -yes: confirm a destructive fault (process.kill, disk.fill). Not needed for latency, status, timeout or pause faults." + gate),
+		"allow-target": strArg("Forward -allow-target: comma-separated extra non-loopback hosts the scenario may touch." + gate),
+		"allow-pid":    strArg("Forward -allow-pid: the one PID process.pause or process.kill may signal, for example \"4242\". Required for those faults; no other PID is signalled." + gate),
+		"strict":       boolArg("Forward -strict: fail on a key or param the scenario format does not read (a typo such as \"dealy\"), instead of warning. Recommended for a scenario you just wrote."),
 	}
 	for k, v := range extra {
 		p[k] = v
@@ -180,6 +229,9 @@ func cliArgs(name string, args map[string]any) ([]string, error) {
 		return def
 	}
 	safetyFlags := func(argv []string) []string {
+		if flagOn(args, "strict") {
+			argv = append(argv, "-strict")
+		}
 		if flagOn(args, "yes") {
 			argv = append(argv, "-yes")
 		}
@@ -300,6 +352,9 @@ func runTool(name string, args map[string]any) (toolResult, error) {
 	}
 	if t.CLI == "" && !t.ReadFile {
 		return toolResult{}, fmt.Errorf("tool %q has no CLI equivalent", name)
+	}
+	if err := checkSafetyArgs(args); err != nil {
+		return toolResult{}, err
 	}
 	str := func(k, def string) string {
 		if args == nil {

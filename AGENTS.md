@@ -32,7 +32,7 @@ If a proposed change breaks any of these, stop and flag it.
 - **Probes** (`internal/probe`): HTTP and command.
 - **Report** (`internal/report`): JSON + HTML from a `Result` value.
 - **Hub** (`internal/hub`): embedded catalog; optional git pin via `.litmus-lite/hub.lock`.
-- **MCP** (`internal/mcp`): execs CLI, parses `-output json`. Must not call engine functions directly.
+- **MCP** (`internal/mcp`): execs CLI, parses `-output json`. Must not call engine functions directly. A tool call cannot consent for the person: `yes`, `allow-target` and `allow-pid` are refused, before any CLI runs, unless the person listed them in `LITMUS_LITE_MCP_ALLOW` in the server's env (`init -env`). A new safety flag must be added to `safetyFlagNames` (a test fails otherwise), and `mcp eval` keeps fixtures that prove the refusals.
 - **Hosts / doctor** (`internal/hosts`, `internal/doctor`): `init` and `doctor` share host paths.
 - **Compose** (`internal/compose`): load-generator CLI exec + normalized series merge (`vegaload`, `k6`, `command`).
 - **move-to** (`internal/moveto`): IR and adapters. Core engine has zero awareness of any hosted platform.
@@ -52,7 +52,7 @@ If a proposed change breaks any of these, stop and flag it.
 
 - `litmus-lite new -beside DIR` — write a co-located scenario.
 - `litmus-lite validate FILE`
-- `litmus-lite run FILE` — `-out`, `-allow-target`, `-allow-pid`, `-yes`, `-output json`
+- `litmus-lite run FILE` — `-out`, `-allow-target`, `-allow-pid`, `-yes`, `-strict`, `-output json`. `validate FILE -strict` fails on a key or param nothing reads. Hypothesis, probe-mode and report semantics: `docs/hypotheses.md`.
 - `litmus-lite diagnose FILE.json`
 - `litmus-lite hub list` / `hub import ID -beside DIR` — HTTP, process, docker.pause, cpu.hog, memory.hog, disk.fill, failpoint; optional `.litmus-lite/hub.lock` (embedded IDs win)
 - `litmus-lite run FILE` — `-junit FILE` writes optional JUnit XML

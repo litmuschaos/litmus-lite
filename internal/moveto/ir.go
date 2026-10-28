@@ -49,6 +49,9 @@ type Hypothesis struct {
 	Metric   string `json:"metric"`
 	Operator string `json:"operator"`
 	Value    string `json:"value"`
+	// AllowNoData is carried so that an experiment that tolerates an empty
+	// window still does after the move.
+	AllowNoData bool `json:"allowNoData,omitempty"`
 }
 
 func FromScenario(s *scenario.Scenario) Experiment {

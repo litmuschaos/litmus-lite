@@ -182,6 +182,8 @@ Optional: split the editor and run `./litmus-lite hub list` in the terminal. Sam
 
 **Intent / expect:** see `pause-engine` in the catalog.
 
+**Before you paste:** `allow-pid` is the person's consent, so the MCP server refuses it from the agent unless you enabled it once: `litmus-lite init -env LITMUS_LITE_MCP_ALLOW=allow-pid`, then restart the server. Without it the call is refused and the agent should tell you the CLI command to run.
+
 **Watch for:** `validate_scenario` + `run_test` on that file. Agent must **not** invent `process.kill`.
 
 **You do:** `pgrep -fl engine` in a sidebar if match fails. If the agent paused the wrong process: `kill -CONT <pid>`, then give an explicit pid in the next message.

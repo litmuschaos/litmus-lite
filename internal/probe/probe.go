@@ -60,13 +60,8 @@ func runHTTP(ctx context.Context, p scenario.Probe) (status int, ok bool, errStr
 	want := 200
 	if p.Expect != nil {
 		if v, ok := p.Expect["status"]; ok {
-			switch t := v.(type) {
-			case int:
-				want = t
-			case int64:
-				want = int(t)
-			case float64:
-				want = int(t)
+			if n := statusOf(v); n != 0 {
+				want = n
 			}
 		}
 	}

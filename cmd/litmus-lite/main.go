@@ -25,6 +25,7 @@ import (
 	"github.com/ksatchit/litmus-lite/internal/mcp"
 	"github.com/ksatchit/litmus-lite/internal/moveto"
 	litmusadapter "github.com/ksatchit/litmus-lite/internal/moveto/litmus"
+	"github.com/ksatchit/litmus-lite/internal/probe"
 	"github.com/ksatchit/litmus-lite/internal/report"
 	"github.com/ksatchit/litmus-lite/internal/safety"
 	"github.com/ksatchit/litmus-lite/internal/scenario"
@@ -91,8 +92,8 @@ func usage() {
 
 Commands:
   new -beside DIR        write a co-located *.chaos.yaml
-  validate FILE          schema + safety
-  run FILE               execute a scenario (-allow-target, -allow-pid, -yes, -stream-file|-push|-pull, -run-id, -label)
+  validate FILE          schema + safety (-strict: unknown keys are errors)
+  run FILE               execute a scenario (-allow-target, -allow-pid, -yes, -strict, -stream-file|-push|-pull, -run-id, -label)
                          optional live view in your browser once a service is configured (-live-url, see "live")
   diagnose FILE.json     explain a report
   hub list|search|show|import
@@ -143,6 +144,7 @@ func cmdValidate(args []string) int {
 	allow := fs.String("allow-target", "", "comma-separated extra hosts")
 	allowPID := fs.String("allow-pid", "", "comma-separated PIDs process faults may signal")
 	yes := fs.Bool("yes", false, "allow long/destructive runs")
+	strict := fs.Bool("strict", false, strictUsage)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -175,12 +177,46 @@ func cmdValidate(args []string) int {
 		printErr(*out, err)
 		return 1
 	}
+	warns := lintScenario(sc)
+	if err := strictError(*strict, warns); err != nil {
+		printErr(*out, err)
+		return 1
+	}
 	if *out == "json" {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"valid": true, "name": sc.Metadata.Name})
+		doc := map[string]any{"valid": true, "name": sc.Metadata.Name}
+		if len(warns) > 0 {
+			doc["warnings"] = warns
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(doc)
 	} else {
+		for _, w := range warns {
+			fmt.Fprintln(os.Stderr, "warning: "+w)
+		}
 		fmt.Println("valid")
 	}
 	return 0
+}
+
+const strictUsage = "treat warnings (a key or param the scenario format does not read) as errors"
+
+// lintScenario lists what is wrong with a scenario that does not stop it from
+// running: keys nothing reads, which would otherwise do nothing and say
+// nothing.
+func lintScenario(sc *scenario.Scenario) []string {
+	out := append([]string(nil), sc.Warnings...)
+	out = append(out, faults.Lint(sc)...)
+	for _, p := range append(append([]scenario.Probe(nil), sc.SteadyState...), sc.Probes...) {
+		out = append(out, probe.Lint(p)...)
+	}
+	return out
+}
+
+// strictError is the error -strict makes of the warnings, or nil.
+func strictError(strict bool, warns []string) error {
+	if !strict || len(warns) == 0 {
+		return nil
+	}
+	return fmt.Errorf("-strict: %d warning(s): %s", len(warns), strings.Join(warns, "; "))
 }
 
 // htmlPathFor derives the HTML report path from the JSON report path by
@@ -202,6 +238,7 @@ func cmdRun(args []string) int {
 	allow := fs.String("allow-target", "", "comma-separated extra hosts")
 	allowPID := fs.String("allow-pid", "", "comma-separated PIDs process faults may signal")
 	yes := fs.Bool("yes", false, "allow long/destructive runs")
+	strict := fs.Bool("strict", false, strictUsage)
 	var sflags runStream
 	sflags.register(fs)
 	if err := fs.Parse(args); err != nil {
@@ -230,8 +267,19 @@ func cmdRun(args []string) int {
 		printErr(*outFmt, err)
 		return 2
 	}
+	startWarns := lintScenario(sc)
+	if err := strictError(*strict, startWarns); err != nil {
+		printErr(*outFmt, err)
+		return 1
+	}
+	// Shown now, not only after a long run, and kept in the report.
+	shown := map[string]bool{}
+	for _, w := range startWarns {
+		fmt.Fprintln(os.Stderr, "warning: "+w)
+		shown[w] = true
+	}
 	ctx := safety.WithAllowPIDs(context.Background(), opt.AllowPIDs)
-	eopt := engine.Options{ScenarioDir: filepath.Dir(file)}
+	eopt := engine.Options{ScenarioDir: filepath.Dir(file), Warnings: startWarns}
 	st, err := sflags.setup()
 	if err != nil {
 		printErr(*outFmt, err)
@@ -282,8 +330,14 @@ func cmdRun(args []string) int {
 		fmt.Println(string(b))
 	} else {
 		fmt.Printf("%s passed=%v hypotheses=%d report=%s html=%s\n", res.Name, res.Passed, len(res.Hypotheses), *outPath, htmlPath)
-		if len(res.Warnings) > 0 {
-			fmt.Println(strings.Join(res.Warnings, "\n"))
+		var rest []string
+		for _, w := range res.Warnings {
+			if !shown[w] {
+				rest = append(rest, w)
+			}
+		}
+		if len(rest) > 0 {
+			fmt.Println(strings.Join(rest, "\n"))
 		}
 	}
 	if !res.Passed {

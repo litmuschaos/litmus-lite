@@ -384,8 +384,8 @@ hypotheses:
 
 func TestHypothesisFail(t *testing.T) {
 	h := scenario.Hypothesis{Name: "e", Metric: "error_rate", Operator: "<", Value: "1%"}
-	ph := report.Phase{ErrorRate: 0.5}
-	v := report.HypothesisEval(h, ph, 0)
+	ph := report.Phase{Samples: 10, Failed: 5, ErrorRate: 0.5}
+	v := report.HypothesisEval(h, ph, report.RecoveryInfo{})
 	if v.Passed {
 		t.Fatal("should fail")
 	}

@@ -25,6 +25,9 @@ func TestEvalSuite(t *testing.T) {
 		"v1/list_faults",
 		"v1/hub_import",
 		"v1/create_scenario",
+		"v1/refuses-agent-yes",
+		"v1/refuses-agent-allow-pid",
+		"v1/refuses-agent-allow-target",
 		"v1/tools-cli-equivalent",
 	} {
 		if !strings.Contains(report, "PASS "+name) {
