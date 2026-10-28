@@ -78,4 +78,4 @@ If a proposed change breaks any of these, stop and flag it.
 
 ## Local-only files (do not commit)
 
-`docs/PRD.md`, `docs/context/`, and `examples/launchpad/UPSTREAM.md` are gitignored. If they exist on disk, treat them as private working notes. Never add them to the repository.
+Anything listed under "Local-only internals" in `.gitignore` is private working material for the maintainers. If such files exist on disk, read them for context, but never add them to the repository (not with `git add -f` either), and never quote or link them from a tracked file, a commit message or a pull request.
