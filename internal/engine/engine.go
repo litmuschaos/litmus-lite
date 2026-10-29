@@ -591,7 +591,7 @@ func startFailure(p scenario.Probe, s probe.Sample) error {
 	if reason := firstLine(clientErrPrefix.ReplaceAllString(s.Error, "")); reason != "" {
 		msg += ": " + reason
 	}
-	if strings.Contains(s.Error, "connection refused") {
+	if refused(s.Error) {
 		msg += ". Is the service running, and is the address right?"
 	}
 	return errors.New(msg)
@@ -631,4 +631,11 @@ func noTrafficWarning(e report.FaultEvent) string {
 	}
 	return fmt.Sprintf("fault %q (%s) saw no requests while it was armed: nothing went through %s, so it changed nothing and the hypotheses were judged on an undisturbed service. "+
 		"Point the probes, the load generator or your client at that address, not at the upstream", e.Name, e.Kind, where)
+}
+
+// refused reports whether a probe's error is a connection nothing accepted:
+// "connection refused" on Linux and macOS, and on Windows "connectex: No
+// connection could be made because the target machine actively refused it."
+func refused(msg string) bool {
+	return strings.Contains(msg, "connection refused") || strings.Contains(msg, "actively refused")
 }

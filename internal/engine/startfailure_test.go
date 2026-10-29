@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ksatchit/litmus-lite/internal/probe"
 	"github.com/ksatchit/litmus-lite/internal/scenario"
 )
 
@@ -28,10 +29,23 @@ func startFailureOf(t *testing.T, p scenario.Probe) string {
 func TestStartFailureSaysWhereTheProbeLookedAndWhy(t *testing.T) {
 	addr := freeAddr(t)
 	got := startFailureOf(t, scenario.Probe{Name: "healthz", Type: "http", URL: "http://" + addr + "/healthz", Timeout: "500ms"})
-	for _, want := range []string{`steady-state probe "healthz" failed`, "GET http://" + addr + "/healthz", "connection refused", "Is the service running"} {
+	for _, want := range []string{`steady-state probe "healthz" failed`, "GET http://" + addr + "/healthz", "refused", "Is the service running"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("message lacks %q:\n%s", want, got)
 		}
+	}
+}
+
+// Windows words the same failure differently, and the hint must follow.
+func TestStartFailureKnowsTheWindowsWordingOfARefusedConnection(t *testing.T) {
+	err := startFailure(scenario.Probe{Name: "healthz", Type: "http", URL: "http://127.0.0.1:1/healthz"}, probe.Sample{
+		Error: `Get "http://127.0.0.1:1/healthz": dial tcp 127.0.0.1:1: connectex: No connection could be made because the target machine actively refused it.`,
+	})
+	if !strings.Contains(err.Error(), "Is the service running") {
+		t.Errorf("%v", err)
+	}
+	if refused("503 Service Unavailable") {
+		t.Error("a status is not a refused connection")
 	}
 }
 
@@ -60,7 +74,7 @@ func TestStartFailureDoesNotRepeatCredentialsFromTheURL(t *testing.T) {
 			t.Errorf("the message repeats %q:\n%s", secret, got)
 		}
 	}
-	if !strings.Contains(got, "GET http://"+addr+"/healthz") || !strings.Contains(got, "connection refused") {
+	if !strings.Contains(got, "GET http://"+addr+"/healthz") || !strings.Contains(got, "refused") {
 		t.Errorf("%s", got)
 	}
 }
