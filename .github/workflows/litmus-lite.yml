@@ -121,9 +121,7 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: release --snapshot --clean --skip=publish
-        env:
-          HOMEBREW_TAP_GITHUB_TOKEN: unused-in-a-dry-run
-      - name: six archives and a cask
+      - name: six archives and a checksum file
         run: |
           test "$(ls dist/*.tar.gz dist/*.zip | wc -l)" = 6
-          grep -q postflight_steps dist/homebrew/Casks/litmus-lite.rb
+          test -s dist/checksums.txt
