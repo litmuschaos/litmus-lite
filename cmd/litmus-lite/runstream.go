@@ -193,7 +193,7 @@ func (s *runStream) setup() (*streaming, error) {
 	if len(where) > 0 {
 		fmt.Fprintf(os.Stderr, "streaming run %s: %s\n", runID, strings.Join(where, ", "))
 	}
-	if lv != nil {
+	if lv != nil && lv.page != "" {
 		fmt.Fprintf(os.Stderr, "live view: %s   (not wanted? -no-live, or LITMUS_LITE_LIVE=off)\n", lv.page)
 		if live.OpenEnabled(s.noOpen) {
 			if err := live.Opener(lv.page); err != nil {
@@ -219,13 +219,9 @@ type liveView struct {
 // none. It never fails the run: a service that is down, or an identity file
 // that cannot be kept, just means a run without the view.
 func (s *runStream) resolveLive(base *url.URL) *liveView {
-	id, err := live.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "live view: off (%v)\n", err)
-		return nil
-	}
-	push, err := stream.ValidatePushURL(id.PushURL(base), false)
-	if err != nil {
+	// The rules for the address first, so that nothing is asked of a service
+	// that a push to it would be refused for (a remote http:// address).
+	if _, err := stream.ValidatePushURL(base.String()+"/v1/projects/p/ingest", false); err != nil {
 		fmt.Fprintf(os.Stderr, "live view: off (%v)\n", err)
 		return nil
 	}
@@ -233,10 +229,32 @@ func (s *runStream) resolveLive(base *url.URL) *liveView {
 		fmt.Fprintf(os.Stderr, "live view: off, %s://%s %v. The run goes on without it (-no-live to stop this message)\n", base.Scheme, base.Host, err)
 		return nil
 	}
-	if id.Created {
-		fmt.Fprintf(os.Stderr, "live view: made a project for this machine (%s), kept in %s\n", id.ProjectID, id.Path)
+	r, err := live.Resolve(context.Background(), base)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "live view: off, %v. The run goes on without it\n", err)
+		return nil
 	}
-	return &liveView{push: push, token: id.PushToken, page: id.PageURL(base)}
+	push, err := stream.ValidatePushURL(r.PushURL(base), false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "live view: off (%v)\n", err)
+		return nil
+	}
+	if r.Binding.ViewKey == "" && r.Binding.Hosted {
+		// The environment gave a project and a token but no view key, so
+		// there is no page address to show. The events are still sent.
+		fmt.Fprintf(os.Stderr, "live view: sending to %s://%s; set %sVIEW_KEY to be shown the page address\n", base.Scheme, base.Host, "LITMUS_LITE_LIVE_")
+		return &liveView{push: push, token: r.PushToken}
+	}
+	switch {
+	case r.Made:
+		fmt.Fprintf(os.Stderr, "live view: made a project on %s://%s for this machine, kept in %s\n", base.Scheme, base.Host, r.Identity.Path)
+	case r.Identity != nil && r.Identity.Created && !r.Hosted:
+		fmt.Fprintf(os.Stderr, "live view: made a project for this machine (%s), kept in %s\n", r.ProjectID, r.Identity.Path)
+	}
+	if n := r.Notice(); n != "" && r.Made {
+		fmt.Fprintln(os.Stderr, "live view:", n)
+	}
+	return &liveView{push: push, token: r.PushToken, page: r.PageURL(base)}
 }
 
 // close flushes the sinks, bounded, and reports what went wrong with them. It

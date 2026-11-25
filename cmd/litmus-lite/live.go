@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -65,26 +66,35 @@ func cmdLive(args []string) int {
 		return 1
 	}
 
-	var id *live.Identity
 	if reset {
-		id, err = live.Reset()
-	} else {
-		id, err = live.Load()
+		if _, err := live.Reset(); err != nil {
+			fmt.Fprintln(os.Stderr, "live:", err)
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, "live: made a new project; runs of the old one stay under its old URL")
 	}
+	r, err := live.Resolve(context.Background(), base)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "live:", err)
+		fmt.Fprintf(os.Stderr, "live: %v\n", err)
 		return 1
 	}
-	switch {
-	case reset:
-		fmt.Fprintln(os.Stderr, "live: made a new project; runs of the old one stay under its old URL")
-	case id.Created:
+	if r.Hosted && r.ViewKey == "" {
+		fmt.Fprintf(os.Stderr, "live: set LITMUS_LITE_LIVE_VIEW_KEY to be shown the page address of the project in the environment\n")
+		return 1
+	}
+	if r.Identity != nil && r.Identity.Created && !reset && !r.Hosted {
 		fmt.Fprintln(os.Stderr, "live: made a project for this machine")
 	}
-	fmt.Println(id.PageURL(base))
-	fmt.Fprintf(os.Stderr, "identity kept in %s (mode 0600). The push token in it is never shown or sent anywhere but to %s://%s.\n", id.Path, base.Scheme, base.Host)
+	page := r.PageURL(base)
+	fmt.Println(page)
+	if n := r.Notice(); n != "" {
+		fmt.Fprintln(os.Stderr, "live:", n)
+	}
+	if r.Identity != nil {
+		fmt.Fprintf(os.Stderr, "identity kept in %s (mode 0600). The push token in it is never shown or sent anywhere but to %s://%s.\n", r.Identity.Path, base.Scheme, base.Host)
+	}
 	if *open {
-		if err := live.Opener(id.PageURL(base)); err != nil {
+		if err := live.Opener(page); err != nil {
 			fmt.Fprintf(os.Stderr, "live: could not open the browser (%v)\n", err)
 			return 1
 		}
@@ -106,7 +116,18 @@ func liveEnable(raw string) int {
 		fmt.Fprintln(os.Stderr, "live:", err)
 		return 2
 	}
-	fmt.Println(id.PageURL(base))
 	fmt.Fprintf(os.Stderr, "live: runs now stream to %s://%s (not wanted for one run? -no-live or LITMUS_LITE_LIVE=off). Identity kept in %s (mode 0600).\n", base.Scheme, base.Host, id.Path)
+	fmt.Fprintln(os.Stderr, "live: what is sent: the events of a run (its name, steps, results and labels), never a token or a credential from a fault's parameters.")
+	// Asking now, and not at the first run, shows the address and the terms
+	// while the person who chose this service is looking.
+	r, err := live.Resolve(context.Background(), base)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "live: %v. It is kept, and the next run will try again.\n", err)
+		return 0
+	}
+	fmt.Println(r.PageURL(base))
+	if n := r.Notice(); n != "" {
+		fmt.Fprintln(os.Stderr, "live:", n)
+	}
 	return 0
 }

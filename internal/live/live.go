@@ -42,6 +42,9 @@ type Identity struct {
 	PushToken string    `json:"pushToken"`
 	Base      string    `json:"base,omitempty"` // the destination kept by `live enable`
 	CreatedAt time.Time `json:"createdAt"`
+	// Issued holds the projects a hosted service made for this machine, by the
+	// address of the service (issue.go).
+	Issued map[string]*Issued `json:"issued,omitempty"`
 
 	Created bool   `json:"-"` // made by this call
 	Path    string `json:"-"` // where it is kept
@@ -227,15 +230,11 @@ func Disable() (bool, error) {
 	return had, err
 }
 
-// PushURL is where the events of this machine's project are sent.
-func (id *Identity) PushURL(base *url.URL) string {
-	return base.String() + "/v1/projects/" + id.ProjectID + "/ingest?source=litmus-lite"
-}
+// PushURL is where the events of this machine's project at base are sent.
+func (id *Identity) PushURL(base *url.URL) string { return id.Binding(base).PushURL(base) }
 
-// PageURL is the page that shows the latest run of this machine's project.
-func (id *Identity) PageURL(base *url.URL) string {
-	return base.String() + "/p/" + id.ProjectID
-}
+// PageURL is the page that shows the latest run of this machine's project at base.
+func (id *Identity) PageURL(base *url.URL) string { return id.Binding(base).PageURL(base) }
 
 // Enabled reports whether a configured live view may be used by this run:
 // not when -no-live or LITMUS_LITE_LIVE=off says no. It does not say there is
