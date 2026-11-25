@@ -149,9 +149,21 @@ What happens on a run once a service is configured:
 3. It pushes the run to `<service>/v1/projects/<project id>/ingest` with the token as a bearer token. The service **creates the project when it first sees the id**, so nobody has to visit the service first or copy anything back.
 4. It prints `live view: <service>/p/<project id>` on stderr and **opens that page in the default browser** (not when `CI` is set, `-no-open` or `LITMUS_LITE_OPEN=off` is used, or there is no display on Linux). The page shows the latest run of the project and moves to the next run by itself.
 
+**A hosted service makes the project itself.** Before step 1 above, litmus-lite asks the service about itself (`GET /v1/info`, 5 s for all of these requests together). If it answers `"mode": "public"`, the project is made by the service, once per service address, and kept in the `issued` part of `live.json`:
+
+1. `POST /v1/projects` returns a project id, a push token and a view key. litmus-lite uses only those three values (each is checked for its form) and builds every address itself, so an answer cannot point the token somewhere else.
+2. Events go to `/v1/projects/<project id>/ingest` with the push token. The page is `<service>/p/<view key>`. The id and the token are never in a page address, and the view key is the only thing that lets someone read the run.
+3. The first time, litmus-lite prints who can see the page and for how long: `Anyone with this link can see the run. The service keeps it for 7 days after the last run.` (the number is the service's own).
+4. Before a later run it checks that the service still has the project (`GET /api/projects/<view key>`). A `404` means it expired or was deleted, and a deleted project cannot be brought back by a push, so a new one is asked for. Any other answer, or none, keeps the project.
+5. When the service says no (`429`, `503`, `507`, or "not taking new projects"), the run goes on without the live view and says why, with the time to wait if the service gave one. A rejected push batch later is retried as before: `429`, `503`, `507` and other `5xx` with the service's `Retry-After` (at most 30 s) and a random spread, without ever blocking the run.
+
+A service on this machine (`"mode": "local"`), or one that does not answer `/v1/info`, keeps the older way: the identity made here is the project, and the service creates it at the first push.
+
+**In CI** there is no config directory that outlives the job, so every job would ask for a new project. Give the job one instead: `LITMUS_LITE_LIVE_PROJECT` and `LITMUS_LITE_LIVE_TOKEN` (both, or neither) and optionally `LITMUS_LITE_LIVE_VIEW_KEY` for the page address. Nothing is asked of the service and no file is written. Keep the token in the CI system's secret store.
+
 **One project for several tools.** Two tools that keep a `live.json` of this format (the file is just `projectId`, `pushToken` and an optional `base`) share a project when they read the same folder. `litmus-lite init -env LITMUS_LITE_CONFIG_DIR=DIR` (and the other tool's equivalent) writes that folder into each MCP server entry; the directory is made absolute, because an editor starts the server from a directory of its own. Runs started from the editor then share a project; runs from a terminal use the default folder unless that variable is exported there too. Re-running `init` without `-env` keeps what is already in the entry, and `-env KEY=` removes a variable. `init` refuses a variable whose name looks like a credential (`token`, `secret`, `password`, `api_key`) and a URL with a password in it: the MCP file is written into your project and is often committed.
 
-Two values, two jobs: the project id is in the page URL, so whoever has the URL can read the project's runs. The push token never appears in a URL; the service keeps its hash from the first push and requires it for every later push, so knowing the URL is not enough to add runs to someone else's project.
+Two values, two jobs. On a service on this machine the project id is in the page URL, so whoever has the URL can read the project's runs; on a hosted service the view key is, and the id is not a secret. The push token never appears in a URL; the service keeps its hash from the first push and requires it for every later push, so knowing the URL is not enough to add runs to someone else's project.
 
 ### When it is used
 
@@ -168,7 +180,7 @@ Two values, two jobs: the project id is in the page URL, so whoever has the URL 
 
 Commands other than `run` never send anything to it. MCP `run_test` follows the same rules as the CLI (it execs it), with the `live`, `no-live` and `no-open` arguments.
 
-If the service cannot be reached, answers something that is not a live-view service, or is an older version without projects, the run goes on without it and says so on stderr. A bad address (credentials, a query, a non-https remote) is refused the same way. Nothing here changes a run's result, reports or exit code. A non-loopback `http://` address is refused.
+If the service cannot be reached, answers something that is not a live-view service, is an older version without projects, or refuses to make a project, the run goes on without it and says so on stderr. A bad address (credentials, a query, a non-https remote) is refused the same way. Nothing here changes a run's result, reports or exit code. A non-loopback `http://` address is refused.
 
 ### What leaves your machine
 
@@ -221,6 +233,7 @@ All flags belong to `run` and are optional. Each has an environment variable so 
 | `-live` | | Also use the live view when another destination is chosen (needs a service configured) |
 | `-no-live` | `LITMUS_LITE_LIVE=off` | Do not use the live view, even if one is configured |
 | `-no-open` | `LITMUS_LITE_OPEN=off` | Use the live view but do not open the browser |
+| (none) | `LITMUS_LITE_LIVE_PROJECT`, `LITMUS_LITE_LIVE_TOKEN`, `LITMUS_LITE_LIVE_VIEW_KEY` | The project of a hosted service for a CI job, so that it does not ask for a new one (see "Live view"). The first two go together |
 | `-live-url URL` | `LITMUS_LITE_LIVE_URL` | The live-view service. Setting it is what turns the live view on; there is no default |
 | | `LITMUS_LITE_CONFIG_DIR` | Where `live.json` is kept |
 

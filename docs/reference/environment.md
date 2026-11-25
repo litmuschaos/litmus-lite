@@ -33,6 +33,7 @@ Each one is the same as the `run` flag with the same name; a flag wins.
 | Variable | Meaning |
 | --- | --- |
 | `LITMUS_LITE_LIVE_URL` | a live-view service to stream runs to (as `-live-url`). Without one, there is no live view. |
+| `LITMUS_LITE_LIVE_PROJECT`, `LITMUS_LITE_LIVE_TOKEN`, `LITMUS_LITE_LIVE_VIEW_KEY` | the project on a hosted live-view service, for a CI job. Project and token go together; the view key gives the page address. Keep the token in a secret store. |
 | `LITMUS_LITE_LIVE` | `off` (or `0`, `false`, `no`) turns the live view off, as `-no-live` |
 | `LITMUS_LITE_OPEN` | `off` streams to the live view without opening a browser, as `-no-open` |
 | `CI` | when set (and not `0` or `false`), the browser is never opened |
